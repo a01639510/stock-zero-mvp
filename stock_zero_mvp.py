@@ -4,6 +4,7 @@ from datetime import datetime
 import warnings
 
 # --- IMPORTACIONES DE MÓDULOS ---
+# Asegúrate de que estos módulos existen en tu carpeta 'modules/'
 from modules.core_analysis import procesar_multiple_productos
 from modules.trazability import calcular_trazabilidad_inventario
 from modules.components import (
@@ -174,7 +175,7 @@ with tab_optimizacion:
                     df_display['Cantidad a Ordenar'] = df_display['Cantidad a Ordenar'].apply(lambda x: f"{x:.0f}")
                     st.dataframe(df_display, use_container_width=True, hide_index=True)
                     
-                    # Gráfico de Trazabilidad
+                    # Gráfico de Trazabilidad (LÓGICA RECONSTRUIDA)
                     st.markdown("---")
                     st.markdown("### 📈 Trazabilidad de Inventario (Histórico y Proyectado)")
                     
@@ -189,31 +190,46 @@ with tab_optimizacion:
                         
                         # Obtener Stock Actual desde el inventario_df (Componentes)
                         df_inv_basico = st.session_state.get('inventario_df', pd.DataFrame())
-                        stock_actual = pd.to_numeric(
-                            df_inv_basico[df_inv_basico['Producto'] == producto_seleccionado_inv]['Stock Actual'].iloc[0], 
-                            errors='coerce'
-                        ).fillna(0) if not df_inv_basico.empty else 0.0
-                            
-                        # LLAMADA AL MÓDULO TRAZABILITY
-                        df_trazabilidad = calcular_trazabilidad_inventario(
-                            st.session_state['df_ventas_trazabilidad'],
-                            st.session_state['df_stock_trazabilidad'],
-                            producto_seleccionado_inv,
-                            stock_actual,
-                            resultado_prod['pronostico_diario_promedio'],
-                            lead_time
-                        )
+                        stock_actual = 0.0
+                        mensaje_stock = "⚠️ **Stock Actual no cargado.** Usando Stock = 0. ¡Actualiza el Stock Actual en la pestaña de Control de Inventario Básico!"
+                        
+                        if not df_inv_basico.empty and 'Producto' in df_inv_basico.columns:
+                            stock_row = df_inv_basico[df_inv_basico['Producto'] == producto_seleccionado_inv]
+                            if not stock_row.empty:
+                                # Intentamos obtener el stock de forma segura
+                                try:
+                                    # Usamos .iloc[0] y float() para una extracción limpia
+                                    stock_actual = float(stock_row['Stock Actual'].iloc[0])
+                                    mensaje_stock = f"Stock actual: **{stock_actual:.2f}** (tomado de Control de Inventario Básico)."
+                                except:
+                                    stock_actual = 0.0 # Si falla la conversión (ej. valor no numérico)
+                        
+                        st.warning(mensaje_stock)
 
-                        if df_trazabilidad is not None:
-                            # LLAMADA AL MÓDULO COMPONENTS (Gráfico)
-                            fig_trazabilidad = crear_grafico_trazabilidad_total(
-                                df_trazabilidad,
-                                resultado_prod,
+                        # LLAMADA AL MÓDULO TRAZABILITY
+                        try:
+                            df_trazabilidad = calcular_trazabilidad_inventario(
+                                st.session_state['df_ventas_trazabilidad'],
+                                st.session_state['df_stock_trazabilidad'],
+                                producto_seleccionado_inv,
+                                stock_actual,
+                                resultado_prod['pronostico_diario_promedio'],
                                 lead_time
                             )
-                            st.pyplot(fig_trazabilidad)
-                        else:
-                            st.error(f"❌ No hay datos suficientes para generar la trazabilidad para {producto_seleccionado_inv}.")
+
+                            if df_trazabilidad is not None and not df_trazabilidad.empty:
+                                # LLAMADA AL MÓDULO COMPONENTS (Gráfico)
+                                fig_trazabilidad = crear_grafico_trazabilidad_total(
+                                    df_trazabilidad,
+                                    resultado_prod,
+                                    lead_time
+                                )
+                                st.pyplot(fig_trazabilidad)
+                            else:
+                                st.error(f"❌ La función de trazabilidad no devolvió datos válidos para {producto_seleccionado_inv}. Esto puede ocurrir si no hay ventas ni entradas históricas para ese producto.")
+                        
+                        except Exception as e:
+                            st.error(f"❌ Error crítico al generar la trazabilidad. Por favor, revisa tus archivos de datos. Detalle: {e}")
 
                     # Gráfico Comparativo
                     st.markdown("---")
@@ -239,5 +255,5 @@ with tab_optimizacion:
 # PESTAÑA 2: CONTROL DE INVENTARIO BÁSICO
 # ============================================
 with tab_control_basico:
-    # LLAMADA AL MÓDULO COMPONENTS
+    # LLAMADA AL MÓDULO COMPONENTS - ¡AQUÍ ESTÁ LA CORRECCIÓN DE PESTAÑA!
     inventario_basico_app()
