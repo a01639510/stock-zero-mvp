@@ -56,8 +56,7 @@ def calcular_orden_optima_producto(
         stock_seguridad = pronostico_diario_promedio * stock_seguridad_dias
         punto_reorden = demanda_lead_time + stock_seguridad
         
-        # CAMBIO REALIZADO AQUÍ: Reducimos el factor de 14 a 10 días
-        # Esto reduce la cantidad sugerida para la orden
+        # Se mantiene el factor 10 para una orden más reducida
         cantidad_a_ordenar = pronostico_diario_promedio * 10 
         
         # Guardar datos para gráficos (últimos 30 días + pronóstico)
@@ -117,6 +116,7 @@ def procesar_multiple_productos(
 def crear_grafico_comparativo(resultados: List[Dict]):
     """
     Crea un gráfico comparando ventas históricas y pronósticos de múltiples productos.
+    (El Punto de Reorden se omite para evitar distorsión del eje Y).
     """
     productos_exitosos = [r for r in resultados if 'error' not in r]
     
@@ -155,11 +155,12 @@ def crear_grafico_comparativo(resultados: List[Dict]):
                 color=color, linewidth=2, linestyle='--', 
                 label=f'{nombre} (Pronóstico)', alpha=0.7)
         
-        # Línea horizontal: Punto de reorden
-        punto_reorden = resultado['punto_reorden']
-        ax.axhline(y=punto_reorden, color=color, linestyle=':', 
-                   linewidth=1, alpha=0.5,
-                   label=f'{nombre} - Reorden ({punto_reorden:.0f})')
+        # >>> INICIO DEL CÓDIGO COMENTADO (Se elimina el Punto de Reorden del gráfico) <<<
+        # punto_reorden = resultado['punto_reorden']
+        # ax.axhline(y=punto_reorden, color=color, linestyle=':', 
+        #            linewidth=1, alpha=0.5,
+        #            label=f'{nombre} - Reorden ({punto_reorden:.0f})')
+        # >>> FIN DEL CÓDIGO COMENTADO <<<
     
     # Configuración del gráfico
     ax.set_xlabel('Fecha', fontsize=12, fontweight='bold')
@@ -367,8 +368,7 @@ if uploaded_file is not None:
                     **Cómo leer este gráfico:**
                     - **Líneas sólidas con puntos:** Ventas reales de los últimos 30 días
                     - **Líneas punteadas:** Pronóstico de ventas futuras (Lead Time)
-                    - **Líneas punteadas horizontales:** Punto de reorden (cuando ordenar)
-                    - Cuando la demanda proyectada se acerca al punto de reorden, es momento de hacer el pedido
+                    - **El Punto de Reorden ya no está aquí:** Es un valor de inventario total y no de venta diaria.
                     """)
                 except Exception as e:
                     st.warning(f"No se pudo generar el gráfico: {str(e)}")
