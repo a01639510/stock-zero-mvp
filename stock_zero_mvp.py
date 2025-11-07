@@ -97,45 +97,34 @@ def calcular_orden_optima_producto(
 
 
 def procesar_multiple_productos(
-    df: pd.DataFrame,
-    lead_time: int = 7,
-    stock_seguridad_dias: int = 3,
-    frecuencia_estacional: int = 7
-) -> List[Dict]:
-    """
-    Procesa múltiples productos y realiza la clasificación ABC.
-    """
-    resultados = []
-    productos = df['producto'].unique()
-    
-    for producto in productos:
-        df_producto = df[df['producto'] == producto][['fecha', 'cantidad_vendida']].copy()
-        
-        resultado = calcular_orden_optima_producto(
-            df_producto,
-            producto,
-            lead_time,
-            stock_seguridad_dias,
-            frecuencia_estacional
-        )
-        resultados.append(resultado)
-        
-    # Clasificación ABC
+    # Dentro de la función procesar_multiple_productos (alrededor de la línea 170 del código anterior)
+
+    # Convertir a DataFrame temporal para Clasificación ABC
     df_resultados = pd.DataFrame(resultados)
+
+    # Asegurar que la columna 'error' existe para un manejo más limpio
+    if 'error' not in df_resultados.columns:
+        df_resultados['error'] = None
     
+    # 1. Preparar el DataFrame para ABC
     # Solo clasificar productos sin errores que tienen ventas
-    df_abc = df_resultados[(df_resultados['error'].isnull()) & (df_resultados['volumen_total_vendido'] > 0)].copy()
+    # Usamos .notnull() en 'error' para los que tienen error (string), y .isnull() para los que NO tienen error (None)
+    
+    # Crea la columna 'clasificacion_abc' con valor predeterminado 'N/A'
+    df_resultados['clasificacion_abc'] = 'N/A'
+
+    df_abc = df_resultados[df_resultados['error'].isnull() & (df_resultados['volumen_total_vendido'] > 0)].copy()
     
     if not df_abc.empty:
-        # 1. Ordenar por volumen total de venta (valor/volumen estratégico)
+        # 2. Ordenar por volumen total de venta (valor/volumen estratégico)
         df_abc = df_abc.sort_values('volumen_total_vendido', ascending=False)
         
-        # 2. Calcular porcentaje y porcentaje acumulado
+        # 3. Calcular porcentaje y porcentaje acumulado
         total_volumen = df_abc['volumen_total_vendido'].sum()
         df_abc['volumen_pct'] = (df_abc['volumen_total_vendido'] / total_volumen) * 100
         df_abc['volumen_acum_pct'] = df_abc['volumen_pct'].cumsum()
         
-        # 3. Asignar categoría A, B, C (Regla 80/15/5)
+        # 4. Asignar categoría A, B, C (Regla 80/15/5)
         df_abc['clasificacion_abc'] = np.select(
             [
                 df_abc['volumen_acum_pct'] <= 80,  # 80% del valor/volumen total
@@ -148,19 +137,12 @@ def procesar_multiple_productos(
             default='C'
         )
         
-        # Fusionar de vuelta la clasificación ABC al DataFrame original
-        df_resultados = df_resultados.merge(
-            df_abc[['producto', 'clasificacion_abc']], 
-            on='producto', 
-            how='left'
-        )
-        df_resultados['clasificacion_abc'] = df_resultados['clasificacion_abc'].fillna('N/A')
-    else:
-        df_resultados['clasificacion_abc'] = 'N/A'
+        # 5. Fusionar la clasificación ABC de vuelta al DataFrame original
+        # Usamos .index para actualizar solo las filas calculadas en df_abc
+        df_resultados.loc[df_abc.index, 'clasificacion_abc'] = df_abc['clasificacion_abc']
     
     return df_resultados.to_dict('records')
-
-
+ 
 def crear_grafico_comparativo(resultados: List[Dict]):
     """
     Crea un gráfico comparando ventas históricas y pronósticos de múltiples productos.
