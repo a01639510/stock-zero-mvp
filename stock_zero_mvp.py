@@ -183,6 +183,16 @@ st.markdown("""
         color: #64748b !important;
     }
     
+    [data-testid="stFileUploader"] button {
+        background-color: #1e3a5f !important;
+        color: white !important;
+        border: none !important;
+    }
+    
+    [data-testid="stFileUploader"] button:hover {
+        background-color: #2d5a8f !important;
+    }
+    
     /* Expanders */
     .streamlit-expanderHeader {
         background-color: #f8fafc;
