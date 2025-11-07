@@ -163,57 +163,75 @@ def procesar_multiple_productos(
     
     return df_resultados.to_dict('records')
  
-def crear_grafico_comparativo(resultados: List[Dict]):
+def crear_grafico_inventario_proyectado(resultado: Dict, stock_actual: float, lead_time: int):
     """
-    Crea un gráfico comparando ventas históricas y pronósticos de múltiples productos.
-    (El Punto de Reorden se omite para evitar distorsión del eje Y).
+    Crea un gráfico de la simulación del Nivel de Inventario vs. el tiempo,
+    usando el stock actual como punto de partida y el pronóstico como demanda.
     """
-    productos_exitosos = [r for r in resultados if 'error' not in r]
+    nombre = resultado['producto']
+    punto_reorden = resultado['punto_reorden']
+    cantidad_a_ordenar = resultado['cantidad_a_ordenar']
+    demanda_diaria = resultado['pronostico_diario_promedio']
+
+    # --- SIMULACIÓN DEL NIVEL DE INVENTARIO ---
     
-    colores = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
-               '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+    # Días totales a proyectar (Lead Time + buffer)
+    dias_proyeccion = lead_time + 10 
+    fechas = pd.date_range(start=datetime.now().date(), periods=dias_proyeccion, name='Fecha')
     
-    fig, ax = plt.subplots(figsize=(14, 7))
+    nivel_inventario = [stock_actual]
+    stock = stock_actual
     
-    for idx, resultado in enumerate(productos_exitosos):
-        color = colores[idx % len(colores)]
-        nombre = resultado['producto']
+    # Simular día por día
+    for i in range(1, dias_proyeccion):
+        # El stock baja por la demanda proyectada
+        stock -= demanda_diaria
         
-        df_hist = resultado['datos_historicos']
-        fechas_hist = df_hist.index
-        ventas_hist = df_hist['cantidad_vendida'].values
+        # Simulación de la orden:
+        # Si el stock proyectado cae por debajo del PR Y estás en el día de entrega
+        # (Esto es una simplificación: asumimos que ordenas hoy para que llegue en Lead Time)
+        if i == lead_time and stock <= punto_reorden:
+            stock += cantidad_a_ordenar
+            
+        nivel_inventario.append(max(0, stock)) # El stock no puede ser negativo
         
-        fechas_pron = resultado['pronostico_fechas']
-        valores_pron = resultado['pronostico_valores']
-        
-        ax.plot(fechas_hist, ventas_hist, 
-                color=color, linewidth=2, marker='o', markersize=3,
-                label=f'{nombre}', alpha=0.8)
-        
-        ultima_fecha_hist = fechas_hist.max()
-        ultimo_valor_hist = df_hist.loc[ultima_fecha_hist, 'cantidad_vendida']
-        
-        fechas_pronostico_completo = [ultima_fecha_hist] + fechas_pron
-        valores_pronostico_completo = [ultimo_valor_hist] + valores_pron
-        
-        ax.plot(fechas_pronostico_completo, valores_pronostico_completo,
-                color=color, linewidth=2, linestyle='--', 
-                label=f'{nombre} (Pronóstico)', alpha=0.7)
+    df_proyeccion = pd.DataFrame({
+        'Fecha': fechas,
+        'Nivel de Inventario': nivel_inventario
+    })
     
-    ax.set_xlabel('Fecha', fontsize=12, fontweight='bold')
-    ax.set_ylabel('Cantidad Vendida', fontsize=12, fontweight='bold')
-    ax.set_title('📊 Ventas Históricas vs Pronóstico (Últimos 30 días)', 
-                 fontsize=16, fontweight='bold', pad=20)
+    # --- GRÁFICO ---
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    
+    # 1. Nivel de Inventario Proyectado
+    ax.plot(df_proyeccion['Fecha'], df_proyeccion['Nivel de Inventario'], 
+            color='#1f77b4', linewidth=3, 
+            label='Nivel de Inventario Proyectado')
+    
+    # 2. Línea del Punto de Reorden (PR)
+    ax.axhline(y=punto_reorden, color='red', linestyle='-', 
+               linewidth=1.5, alpha=0.8,
+               label=f'Punto de Reorden ({punto_reorden:.0f})')
+               
+    # 3. Línea del Stock Máximo Teórico (PR + OA)
+    stock_maximo = punto_reorden + cantidad_a_ordenar
+    ax.axhline(y=stock_maximo, color='green', linestyle=':', 
+               linewidth=1.5, alpha=0.6,
+               label=f'Stock Máximo Teórico ({stock_maximo:.0f})')
+               
+    # Configuración del gráfico
+    ax.set_xlabel('Fecha', fontsize=12)
+    ax.set_ylabel('Stock (Unidades)', fontsize=12)
+    ax.set_title(f'📉 Proyección de Inventario y Estrategia para {nombre}', 
+                 fontsize=14, fontweight='bold', pad=15)
     
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-    ax.xaxis.set_major_locator(mdates.DayLocator(interval=5))
+    ax.xaxis.set_major_locator(mdates.DayLocator(interval=3))
     plt.xticks(rotation=45, ha='right')
     
     ax.grid(True, alpha=0.3, linestyle='--')
-    
-    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', 
-              fontsize=9, framealpha=0.9)
-    
+    ax.legend(loc='upper right', fontsize=9, framealpha=0.9)
     plt.tight_layout()
     
     return fig
