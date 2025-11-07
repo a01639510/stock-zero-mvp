@@ -97,22 +97,43 @@ def calcular_orden_optima_producto(
 
 
 def procesar_multiple_productos(
-    # Dentro de la función procesar_multiple_productos (alrededor de la línea 170 del código anterior)
-
+    df: pd.DataFrame,
+    lead_time: int = 7,
+    stock_seguridad_dias: int = 3,
+    frecuencia_estacional: int = 7
+) -> List[Dict]:
+    """
+    Procesa múltiples productos y realiza la clasificación ABC.
+    """
+    resultados = []
+    productos = df['producto'].unique()
+    
+    for producto in productos:
+        df_producto = df[df['producto'] == producto][['fecha', 'cantidad_vendida']].copy()
+        
+        resultado = calcular_orden_optima_producto(
+            df_producto,
+            producto,
+            lead_time,
+            stock_seguridad_dias,
+            frecuencia_estacional
+        )
+        resultados.append(resultado)
+        
+    # --- Clasificación ABC ---
     # Convertir a DataFrame temporal para Clasificación ABC
     df_resultados = pd.DataFrame(resultados)
 
     # Asegurar que la columna 'error' existe para un manejo más limpio
+    # Esta columna ya debería existir desde calcular_orden_optima_producto, pero la comprobamos
     if 'error' not in df_resultados.columns:
         df_resultados['error'] = None
     
     # 1. Preparar el DataFrame para ABC
-    # Solo clasificar productos sin errores que tienen ventas
-    # Usamos .notnull() en 'error' para los que tienen error (string), y .isnull() para los que NO tienen error (None)
-    
     # Crea la columna 'clasificacion_abc' con valor predeterminado 'N/A'
     df_resultados['clasificacion_abc'] = 'N/A'
 
+    # Solo clasificar productos sin errores (error.isnull()) y que tienen ventas (> 0)
     df_abc = df_resultados[df_resultados['error'].isnull() & (df_resultados['volumen_total_vendido'] > 0)].copy()
     
     if not df_abc.empty:
@@ -138,7 +159,6 @@ def procesar_multiple_productos(
         )
         
         # 5. Fusionar la clasificación ABC de vuelta al DataFrame original
-        # Usamos .index para actualizar solo las filas calculadas en df_abc
         df_resultados.loc[df_abc.index, 'clasificacion_abc'] = df_abc['clasificacion_abc']
     
     return df_resultados.to_dict('records')
