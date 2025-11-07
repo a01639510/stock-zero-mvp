@@ -13,6 +13,7 @@ from modules.components import (
     crear_grafico_trazabilidad_total, 
     generar_inventario_base
 )
+from modules.recipes import recetas_app  # <-- NUEVA IMPORTACIÓN
 
 warnings.filterwarnings('ignore')
 
@@ -36,7 +37,11 @@ if 'inventario_df' not in st.session_state:
 
 
 # USAMOS PESTAÑAS PARA SEPARAR LAS FUNCIONALIDADES
-tab_optimizacion, tab_control_basico = st.tabs(["🚀 Optimización de Inventario (Pronóstico)", "🛒 Control de Inventario Básico"])
+tab_optimizacion, tab_control_basico, tab_recetas = st.tabs([
+    "🚀 Optimización de Inventario (Pronóstico)", 
+    "🛒 Control de Inventario Básico",
+    "👨‍🍳 Recetas y Productos"
+])
 
 # ============================================
 # PESTAÑA 1: OPTIMIZACIÓN Y PRONÓSTICO
@@ -114,7 +119,7 @@ with tab_optimizacion:
                         df_stock = df_raw_stock.copy()
                         df_stock['fecha'] = pd.to_datetime(df_stock['fecha'], errors='coerce')
                         df_stock = df_stock.dropna(subset=['fecha'])
-                        df_stock['fecha'] = df_stock['fecha'].dt.normalize() # <-- CORREGIDO
+                        df_stock['fecha'] = df_stock['fecha'].dt.normalize()
                         df_stock['cantidad_recibida'] = pd.to_numeric(df_stock['cantidad_recibida'], errors='coerce').fillna(0)
                         st.success("✅ Historial de Entradas de Stock cargado.")
                     else:
@@ -270,3 +275,9 @@ with tab_optimizacion:
 # ============================================
 with tab_control_basico:
     inventario_basico_app()
+
+# ============================================
+# PESTAÑA 3: RECETAS Y PRODUCTOS
+# ============================================
+with tab_recetas:
+    recetas_app()
