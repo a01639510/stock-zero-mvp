@@ -31,8 +31,7 @@ def calcular_trazabilidad_inventario(
     if ventas_prod.empty and entradas_prod.empty:
         return None
 
-    # CORRECCIÓN CLAVE: Asegurar que las columnas de cantidad sean numéricas y manejar NaN
-    # Esto previene el error 'numpy.float64' object has no attribute 'fillna'
+    # CORRECCIÓN DE TIPO: Asegurar que las columnas de cantidad sean numéricas y manejar NaN al inicio
     ventas_prod['cantidad_vendida'] = pd.to_numeric(ventas_prod['cantidad_vendida'], errors='coerce').fillna(0)
     entradas_prod['cantidad_recibida'] = pd.to_numeric(entradas_prod['cantidad_recibida'], errors='coerce').fillna(0)
     
@@ -53,11 +52,17 @@ def calcular_trazabilidad_inventario(
     
     # Resample y mapear datos
     if not ventas_prod.empty:
-        ventas_diarias = ventas_prod.set_index('fecha').resample('D').sum()['cantidad_vendida'].fillna(0)
+        # Extraemos la Serie
+        ventas_diarias = ventas_prod.set_index('fecha').resample('D').sum()['cantidad_vendida']
+        # NUEVA CORRECCIÓN: Forzamos a que sea una Serie de Pandas antes de llamar a fillna
+        ventas_diarias = pd.Series(ventas_diarias).fillna(0) 
         df_diario.loc[df_diario.index.intersection(ventas_diarias.index), 'Ventas'] = ventas_diarias
         
     if not entradas_prod.empty:
-        entradas_diarias = entradas_prod.set_index('fecha').resample('D').sum()['cantidad_recibida'].fillna(0)
+        # Extraemos la Serie
+        entradas_diarias = entradas_prod.set_index('fecha').resample('D').sum()['cantidad_recibida']
+        # NUEVA CORRECCIÓN: Forzamos a que sea una Serie de Pandas antes de llamar a fillna
+        entradas_diarias = pd.Series(entradas_diarias).fillna(0) 
         df_diario.loc[df_diario.index.intersection(entradas_diarias.index), 'Entradas'] = entradas_diarias
 
     # --- 2. CÁLCULO DEL INVENTARIO HISTÓRICO (HACIA ATRÁS) ---
