@@ -1,0 +1,21 @@
+pandas==2.0.3
+numpy==1.24.3
+statsmodels==0.14.0
+streamlit==1.28.0
+```
+```
+5. Click "Commit new file"
+```
+
+### ¡Eso es todo! 
+
+Streamlit Cloud detectará el archivo automáticamente y reinstalará la app en 1-2 minutos.
+
+---
+
+## 🎯 Estructura final que debe tener tu repositorio:
+```
+stock-zero-mvp/
+├── stock_zero_mvp.py     ← Tu código principal
+├── requirements.txt      ← ESTE ES EL QUE FALTA
+└── README.md             ← (opcional)
