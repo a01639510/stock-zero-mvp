@@ -5,7 +5,7 @@ from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from typing import Dict, Union, List
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-from datetime import datetime
+from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -144,7 +144,7 @@ def procesar_multiple_productos(
         df_abc['clasificacion_abc'] = np.select(
             [
                 df_abc['volumen_acum_pct'] <= 80,  # 80% del valor/volumen total
-                df_abc['volumen_acum_pct'] <= 95   # 80% + 15% = 95%
+                df_abc['volumen_acum_pct'] <= 95    # 80% + 15% = 95%
             ],
             [
                 'A',
@@ -159,7 +159,7 @@ def procesar_multiple_productos(
     return df_resultados.to_dict('records')
 
 # ============================================
-# FUNCIONES DE TRAZABILIDAD Y GRÁFICOS (NUEVOS)
+# FUNCIONES DE TRAZABILIDAD Y GRÁFICOS
 # ============================================
 def calcular_trazabilidad_inventario(
     df_ventas: pd.DataFrame, 
@@ -175,7 +175,7 @@ def calcular_trazabilidad_inventario(
     CORRECCIÓN: Se asegura que todas las comparaciones de fechas usen 
     el tipo datetime.date de Python para evitar errores de atributos.
     """
-    import numpy as np # Asegurar que numpy esté disponible en el alcance de la función
+    
     from datetime import datetime, timedelta
 
     # 1. PREPARACIÓN DE DATOS DIARIOS
@@ -193,6 +193,7 @@ def calcular_trazabilidad_inventario(
     
     fecha_actual = datetime.now().date()
     
+    # Asegurar rango de fechas con proyección futura
     dias_proyeccion = (fecha_actual - min_date).days + lead_time + 10
     fechas = pd.date_range(start=min_date, periods=dias_proyeccion, name='Fecha')
     
@@ -200,7 +201,7 @@ def calcular_trazabilidad_inventario(
     df_diario['Ventas'] = 0.0
     df_diario['Entradas'] = 0.0
     
-    # Mapear ventas y entradas a la serie diaria (uso de .intersection para evitar warnings)
+    # Mapear ventas y entradas a la serie diaria
     if not ventas_prod.empty:
         ventas_diarias = ventas_prod.set_index('fecha').resample('D').sum()['cantidad_vendida'].fillna(0)
         df_diario.loc[df_diario.index.intersection(ventas_diarias.index), 'Ventas'] = ventas_diarias
@@ -212,26 +213,28 @@ def calcular_trazabilidad_inventario(
     # 2. CÁLCULO DEL INVENTARIO HISTÓRICO
     
     df_diario['Stock'] = 0.0
+    # Comenzamos con el stock actual y calculamos hacia atrás
     stock_t = stock_actual_manual
     
     # Iterar hacia atrás:
     for date_ts in reversed(df_diario.index):
-        date = date_ts.date() # Convertir Timestamp a date para comparación
+        date = date_ts.date()
         
         if date > fecha_actual:
-            continue 
+            continue  # Saltar días futuros
         
         df_diario.loc[date_ts, 'Stock'] = stock_t
         
         ventas_t = df_diario.loc[date_ts, 'Ventas']
         entradas_t = df_diario.loc[date_ts, 'Entradas']
         
+        # Fórmula inversa: Stock del día anterior = Stock de hoy + Ventas de hoy - Entradas de hoy
         stock_t = stock_t + ventas_t - entradas_t
         stock_t = max(0, stock_t)
         
     # 3. PROYECCIÓN DEL INVENTARIO FUTURO
     
-    # Asegurar el stock del día de hoy
+    # Asegurar el stock del día de hoy (punto de inicio para la proyección)
     try:
         df_diario.loc[fecha_actual.strftime("%Y-%m-%d"), 'Stock'] = stock_actual_manual
     except KeyError:
@@ -243,22 +246,25 @@ def calcular_trazabilidad_inventario(
         
         if date > fecha_actual:
             
-            # Obtener el índice anterior
+            # Obtener el stock del día anterior
             idx_anterior = df_diario.index[i - 1]
             stock_anterior = df_diario.loc[idx_anterior, 'Stock']
+            
+            # Stock proyectado = Stock anterior - Consumo promedio diario
             stock_proyectado = stock_anterior - pronostico_diario_promedio
             
             df_diario.loc[date_ts, 'Stock'] = max(0, stock_proyectado)
             
-    # 4. MARCAR LA DIVISIÓN (LA CORRECCIÓN CLAVE PARA EL ERROR DE ATRIBUTO)
+    # 4. MARCAR LA DIVISIÓN (SOLUCIONA EL ERROR DE ATRIBUTO)
     
-    # 🏆 CONVERTIMOS EXPLICITAMENTE EL ÍNDICE A OBJETOS DE FECHA DE PYTHON
+    # Convertimos el índice a objetos de fecha de Python para una comparación segura
     fechas_indice = np.array([d.date() for d in df_diario.index])
     
     # Usamos np.where para la comparación segura.
     df_diario['Tipo'] = np.where(fechas_indice <= fecha_actual, 'Histórico', 'Proyectado')
     
     return df_diario.reset_index()
+
 def crear_grafico_trazabilidad_total(
     df_trazabilidad: pd.DataFrame, 
     resultado: Dict, 
@@ -320,13 +326,15 @@ def crear_grafico_trazabilidad_total(
 
 
 def crear_grafico_comparativo(resultados: List[Dict]):
-    # Mantenemos la función comparativa para una visión general
-    # ... (código de crear_grafico_comparativo - No está en el código provisto, asumo que existe o la omitiremos)
-    # Por ahora, para no romper nada, crearemos una función placeholder:
-    
-    df = pd.DataFrame([r for r in resultados if 'error' not in r])
+    """
+    Crea el gráfico de volumen total de ventas para la visión general.
+    """
+    df = pd.DataFrame([r for r in resultados if r.get('error') is None])
     if df.empty:
-        return plt.figure()
+        # Crea un gráfico vacío si no hay datos exitosos
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.set_title('No hay datos suficientes para la Visión General.')
+        return fig
         
     df_sorted = df.sort_values('volumen_total_vendido', ascending=False)
 
@@ -338,9 +346,6 @@ def crear_grafico_comparativo(resultados: List[Dict]):
     plt.tight_layout()
     return fig
     
-# La función crear_grafico_individual se ELIMINA ya que es redundante con el nuevo gráfico de Trazabilidad Total
-
-
 # ============================================
 # FUNCIONES DE INVENTARIO BÁSICO
 # ============================================
@@ -348,12 +353,12 @@ def crear_grafico_comparativo(resultados: List[Dict]):
 def generar_inventario_base():
     """Genera un DataFrame base para la sección de inventario."""
     data = {
-        'Producto': ['Café en Grano (Kg)', 'Leche Entera (Litros)', 'Azúcar (Kg)', 'Vaso 12oz (Unidad)', 'Tapa 12oz (Unidad)'],
-        'Categoría': ['Insumo', 'Insumo', 'Insumo', 'Desechable', 'Desechable'],
-        'Unidad': ['KG', 'L', 'KG', 'UNI', 'UNI'],
-        'Stock Actual': [5.0, 15.0, 8.0, 500, 500],
-        'Punto de Reorden (PR)': [3.0, 5.0, 2.0, 100, 100],
-        'Costo Unitario': [180.0, 25.0, 15.0, 1.5, 0.8],
+        'Producto': ['Café en Grano (Kg)', 'Carne Molida (Kg)', 'Jitomate (Kg)', 'Leche (L)', 'Pan Hamburguesa (Uni)'],
+        'Categoría': ['Insumo', 'Insumo', 'Insumo', 'Insumo', 'Insumo'],
+        'Unidad': ['KG', 'KG', 'KG', 'L', 'UNI'],
+        'Stock Actual': [50.0, 150.0, 80.0, 200.0, 500.0],
+        'Punto de Reorden (PR)': [15.0, 40.0, 20.0, 50.0, 100.0],
+        'Costo Unitario': [180.0, 80.0, 25.0, 15.0, 5.0],
     }
     df = pd.DataFrame(data)
     
@@ -365,7 +370,7 @@ def inventario_basico_app():
     """Interfaz para el control de inventario básico tipo Excel."""
     
     st.header("🛒 Control de Inventario Básico")
-    st.info("💡 Usa esta sección para gestionar el stock físico. Las alertas se activan si el 'Stock Actual' cae por debajo del 'Punto de Reorden'.")
+    st.info("💡 Usa esta sección para gestionar el stock físico. Los productos listados aquí son usados para anclar la línea de **Trazabilidad** en la pestaña de Optimización.")
 
     if 'inventario_df' not in st.session_state:
         st.session_state['inventario_df'] = generar_inventario_base()
@@ -513,7 +518,7 @@ with tab_optimizacion:
         try:
             df_raw_ventas = pd.read_csv(uploaded_file_ventas)
             
-            # Detección de formato para VENTAS (mismo código anterior)
+            # Detección de formato para VENTAS
             formato_detectado = None
             if 'producto' in df_raw_ventas.columns and 'cantidad_vendida' in df_raw_ventas.columns:
                 formato_detectado = "largo"
@@ -529,7 +534,7 @@ with tab_optimizacion:
             df_ventas = df_ventas.dropna(subset=['fecha'])
             df_ventas['cantidad_vendida'] = pd.to_numeric(df_ventas['cantidad_vendida'], errors='coerce').fillna(0)
             
-            # Procesar archivo de STOCK (Nuevo)
+            # Procesar archivo de STOCK
             df_stock = pd.DataFrame(columns=['fecha', 'producto', 'cantidad_recibida']) # DF vacío por defecto
             if uploaded_file_stock is not None:
                 try:
@@ -565,7 +570,8 @@ with tab_optimizacion:
             
             st.markdown("### 3️⃣ Calcular Inventario Óptimo")
             
-          if st.button("🚀 Calcular para TODOS los productos", type="primary", use_container_width=True):
+            # El botón solo ejecuta el cálculo y guarda en session_state
+            if st.button("🚀 Calcular para TODOS los productos", type="primary", use_container_width=True):
                 with st.spinner(f"Analizando {len(productos)} productos..."):
                     resultados = procesar_multiple_productos(
                         df_ventas,
@@ -574,13 +580,15 @@ with tab_optimizacion:
                         frecuencia
                     )
                 
-                # --- SOLUCIÓN: GUARDAR RESULTADOS EN EL ESTADO DE SESIÓN ---
+                # --- GUARDAR RESULTADOS EN EL ESTADO DE SESIÓN ---
                 st.session_state['df_resultados'] = pd.DataFrame(resultados)
                 st.session_state['df_ventas_trazabilidad'] = df_ventas
                 st.session_state['df_stock_trazabilidad'] = df_stock
-                # --- FIN SOLUCIÓN ---
+                # --- FIN GUARDADO ---
                 
-                
+                # Forzar un rerun para que la sección de resultados se actualice
+                st.rerun()
+
             # --- SECCIÓN DE RESULTADOS ---
             # Solo si ya se calcularon y están en la sesión:
             if 'df_resultados' in st.session_state:
@@ -593,7 +601,7 @@ with tab_optimizacion:
                 if not df_exitosos.empty:
                     st.success(f"✅ Se analizaron exitosamente {len(df_exitosos)} productos")
                     
-                    # CÁLCULO DE MÉTRICAS (Igual)
+                    # CÁLCULO DE MÉTRICAS 
                     total_reorden = df_exitosos['punto_reorden'].sum()
                     total_ordenar = df_exitosos['cantidad_a_ordenar'].sum()
                     cobertura_orden = frecuencia / 2
@@ -603,43 +611,7 @@ with tab_optimizacion:
                     with col2: st.metric("📦 Total a Ordenar", f"{total_ordenar:.0f} unidades")
                     with col3: st.metric("💡 Cobertura de la Orden", f"{cobertura_orden} días")
                     
-                    # TABLA ABC (Igual)
-                    st.markdown("### 📋 Recomendaciones y Clasificación ABC")
-                    
-                    df_display = df_exitosos[['producto', 'clasificacion_abc', 'punto_reorden', 'cantidad_a_ordenar', 
-                                              'pronostico_diario_promedio']].copy()
-                    
-                    df_display.columns = ['Producto', 'ABC', 'Punto de Reorden', 'Cantidad a Ordenar', 'Venta Diaria Promedio']
-                    df_display['Punto de Reorden'] = df_display['Punto de Reorden'].apply(lambda x: f"{x:.0f}")
-                    df_display['Cantidad a Ordenar'] = df_display['Cantidad a Ordenar'].apply(lambda x: f"{x:.0f}")
-                    df_display['Venta Diaria Promedio'] = df_display['Venta Diaria Promedio'].apply(lambda x: f"{x:.1f}")
-                    
-                    st.dataframe(df_display, use_container_width=True, hide_index=True)
-                    
-                    st.info("""
-                    **Clasificación ABC:** **A** (80% del volumen), **B** (15% del volumen), **C** (5% restante).
-                    """)
-                # Convertir lista de diccionarios a DataFrame para manejo más fácil
-                df_resultados = pd.DataFrame(resultados)
-                df_exitosos = df_resultados[df_resultados['error'].isnull()].sort_values('cantidad_a_ordenar', ascending=False)
-                
-                st.markdown("---")
-                st.markdown("## 📊 Resultados del Análisis")
-                
-                if not df_exitosos.empty:
-                    st.success(f"✅ Se analizaron exitosamente {len(df_exitosos)} productos")
-                    
-                    # Métricas
-                    total_reorden = df_exitosos['punto_reorden'].sum()
-                    total_ordenar = df_exitosos['cantidad_a_ordenar'].sum()
-                    cobertura_orden = frecuencia / 2
-                    
-                    col1, col2, col3 = st.columns(3)
-                    with col1: st.metric("🎯 Total Punto de Reorden", f"{total_reorden:.0f} unidades")
-                    with col2: st.metric("📦 Total a Ordenar", f"{total_ordenar:.0f} unidades")
-                    with col3: st.metric("💡 Cobertura de la Orden", f"{cobertura_orden} días")
-                    
-                    # Tabla con ABC
+                    # TABLA ABC 
                     st.markdown("### 📋 Recomendaciones y Clasificación ABC")
                     
                     df_display = df_exitosos[['producto', 'clasificacion_abc', 'punto_reorden', 'cantidad_a_ordenar', 
@@ -656,9 +628,6 @@ with tab_optimizacion:
                     **Clasificación ABC:** **A** (80% del volumen), **B** (15% del volumen), **C** (5% restante).
                     """)
                     
-                    # ============================================
-                    # GRÁFICO DE TRAZABILIDAD TOTAL (NUEVO CORE)
-                    # ============================================
                     # ============================================
                     # GRÁFICO DE TRAZABILIDAD TOTAL Y COMPARATIVO
                     # ============================================
@@ -667,15 +636,16 @@ with tab_optimizacion:
                     st.markdown("### 📈 Trazabilidad de Inventario (Histórico y Proyectado)")
                     
                     # Cargar los datos guardados en el estado de sesión
-                    df_ventas = st.session_state['df_ventas_trazabilidad']
-                    df_stock = st.session_state['df_stock_trazabilidad']
+                    df_ventas_trazabilidad = st.session_state['df_ventas_trazabilidad']
+                    df_stock_trazabilidad = st.session_state['df_stock_trazabilidad']
+                    # Usar el DataFrame de inventario básico guardado
                     df_inv_basico = st.session_state.get('inventario_df', pd.DataFrame())
                     
                     # Selector de producto
                     producto_seleccionado_inv = st.selectbox(
                         "Selecciona un producto para ver la trazabilidad de stock:",
                         options=df_exitosos['producto'].tolist(),
-                        key="selector_inventario_proyectado"
+                        key="selector_inventario_proyectado" # Key único para forzar el cambio
                     )
                     
                     if producto_seleccionado_inv:
@@ -689,23 +659,25 @@ with tab_optimizacion:
                             stock_row = df_inv_basico[df_inv_basico['Producto'] == producto_seleccionado_inv]
                             
                             if not stock_row.empty:
+                                # Convertir a numérico y usar el valor, si no existe o es NaN, usa 0
                                 stock_actual = pd.to_numeric(stock_row['Stock Actual'].iloc[0], errors='coerce').fillna(0)
+                                
                                 if stock_actual == 0:
                                     mensaje_stock = f"⚠️ **{producto_seleccionado_inv}** encontrado, pero su **Stock Actual es 0**. La simulación de stock será incompleta."
                                 else:
-                                    mensaje_stock = f"Stock actual tomado de **Control de Inventario Básico**."
+                                    mensaje_stock = f"Stock actual: **{stock_actual:.2f}** (tomado de Control de Inventario Básico)."
                             else:
                                 mensaje_stock = f"⚠️ **{producto_seleccionado_inv}** no encontrado en la pestaña de Control de Inventario Básico. Usando Stock Actual = 0."
                         else:
-                            mensaje_stock = "⚠️ El Control de Inventario Básico no está cargado. Usando Stock Actual = 0."
+                            mensaje_stock = "⚠️ El Control de Inventario Básico no está cargado o no contiene el producto. Usando Stock Actual = 0."
                         
                         # Mostrar el mensaje de stock antes del gráfico
                         st.warning(mensaje_stock)
                         
                         # Generar Trazabilidad Total
                         df_trazabilidad = calcular_trazabilidad_inventario(
-                            df_ventas,
-                            df_stock,
+                            df_ventas_trazabilidad,
+                            df_stock_trazabilidad,
                             producto_seleccionado_inv,
                             stock_actual,
                             resultado_prod['pronostico_diario_promedio'],
@@ -729,36 +701,23 @@ with tab_optimizacion:
                         else:
                             st.error(f"❌ No hay datos de ventas o stock disponibles para {producto_seleccionado_inv} para generar la trazabilidad.")
 
-                    # --- VISIÓN GENERAL (MOVIDO FUERA DEL SELECTOR) ---
+                    # --- VISIÓN GENERAL (MOVIDO AL FINAL Y FUERA DEL SELECTOR) ---
                     st.markdown("---")
                     st.markdown("### 📊 Tendencias de Ventas (Visión General)")
                     fig_comparativo = crear_grafico_comparativo(df_exitosos.to_dict('records'))
                     st.pyplot(fig_comparativo)
+            
+            else:
+                 st.info("👆 Haz clic en 'Calcular para TODOS los productos' para ver los resultados del análisis.")
 
-                # Mostrar errores si los hay
-                df_errores = df_resultados[df_resultados['error'].notnull()]
-                if not df_errores.empty:
-                    st.markdown("---")
-                    st.warning(f"⚠️ {len(df_errores)} productos no pudieron analizarse por datos insuficientes.")
-                    for idx, row in df_errores.iterrows():
-                        st.error(f"**{row['producto']}:** {row['error']}")
-                
+
         except Exception as e:
-            st.error(f"Error al procesar el archivo de ventas: {str(e)}")
-
+            st.error(f"Error al procesar el archivo de ventas: {e}")
+            st.stop()
     else:
-        st.info("👆 **Comienza subiendo tu archivo CSV de ventas** para obtener el análisis avanzado.")
+        st.info("Sube tus archivos de Ventas e Historial de Stock para comenzar el análisis.")
 
 
 # === PESTAÑA 2: CONTROL DE INVENTARIO BÁSICO ===
 with tab_control_basico:
     inventario_basico_app()
-
-
-# Footer
-st.markdown("---")
-st.markdown("""
-<div style='text-align: center; color: #666;'>
-    <p><strong>Stock Zero MVP</strong> - Optimización Multi-Producto | Google Gemini Pro</p>
-</div>
-""", unsafe_allow_html=True)
