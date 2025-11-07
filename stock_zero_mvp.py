@@ -99,15 +99,10 @@ with tab_optimizacion:
                 st.error("❌ Formato de VENTAS no reconocido. Columnas requeridas: `fecha` y (`producto`, `cantidad_vendida`) o `fecha` y columnas de producto.")
                 st.stop()
             
-            # Limpieza robusta de datos de ventas
-            df_ventas['fecha'] = pd.to_datetime(df_ventas['fecha'], errors='coerce').normalize()
-            df_ventas = df_ventas.dropna(subset=['fecha'])
-            df_ventas['cantidad_vendida'] = pd.to_numeric(df_ventas['cantidad_vendida'], errors='coerce').fillna(0)
-            
-            # Procesar archivo de STOCK
+            # Limpieza robusta de datos de ventas (CORRECCIÓN CLAVE: usar .dt.normalize())
             df_ventas['fecha'] = pd.to_datetime(df_ventas['fecha'], errors='coerce')
             df_ventas = df_ventas.dropna(subset=['fecha'])
-            df_ventas['fecha'] = df_ventas['fecha'].dt.normalize() # <-- CORREGIDO
+            df_ventas['fecha'] = df_ventas['fecha'].dt.normalize()
             df_ventas['cantidad_vendida'] = pd.to_numeric(df_ventas['cantidad_vendida'], errors='coerce').fillna(0)
             
             # Procesar archivo de STOCK
@@ -274,5 +269,4 @@ with tab_optimizacion:
 # PESTAÑA 2: CONTROL DE INVENTARIO BÁSICO
 # ============================================
 with tab_control_basico:
-    # La función debe estar definida en modules/components.py
     inventario_basico_app()
