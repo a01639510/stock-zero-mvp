@@ -112,17 +112,17 @@ st.markdown("""
     <style>
     /* Fondo principal blanco */
     .stApp {
-        background-color: #FFFFFF;
+        background-color: #FFFFFF !important;
     }
     
-    /* Texto principal en gris oscuro */
-    .stApp, .stMarkdown, p, span, label {
+    /* Todo el texto principal en gris oscuro/negro */
+    .stApp * {
         color: #1a202c !important;
     }
     
     /* Sidebar con azul marino */
     [data-testid="stSidebar"] {
-        background-color: #1e3a5f;
+        background-color: #1e3a5f !important;
     }
     
     [data-testid="stSidebar"] * {
@@ -130,14 +130,14 @@ st.markdown("""
     }
     
     /* Headers en azul marino */
-    h1, h2, h3 {
+    h1, h2, h3, h4, h5, h6 {
         color: #1e3a5f !important;
     }
     
     /* Botones principales en azul marino */
     .stButton > button {
-        background-color: #1e3a5f;
-        color: white;
+        background-color: #1e3a5f !important;
+        color: white !important;
         border: none;
         border-radius: 8px;
         padding: 12px 24px;
@@ -146,7 +146,7 @@ st.markdown("""
     }
     
     .stButton > button:hover {
-        background-color: #2d5a8f;
+        background-color: #2d5a8f !important;
         box-shadow: 0 4px 12px rgba(30, 58, 95, 0.3);
     }
     
@@ -156,8 +156,12 @@ st.markdown("""
         font-weight: 700;
     }
     
+    [data-testid="stMetricLabel"] {
+        color: #1a202c !important;
+    }
+    
     div[data-testid="stMetric"] {
-        background-color: #f8fafc;
+        background-color: #f8fafc !important;
         padding: 15px;
         border-radius: 8px;
         border-left: 4px solid #1e3a5f;
@@ -165,22 +169,14 @@ st.markdown("""
     
     /* File uploader */
     [data-testid="stFileUploader"] {
-        border: 2px dashed #1e3a5f;
+        border: 2px dashed #1e3a5f !important;
         border-radius: 8px;
         padding: 20px;
-        background-color: #f8fafc;
-    }
-    
-    [data-testid="stFileUploader"] label {
-        color: #1e3a5f !important;
-    }
-    
-    [data-testid="stFileUploader"] section {
         background-color: #ffffff !important;
     }
     
-    [data-testid="stFileUploader"] small {
-        color: #64748b !important;
+    [data-testid="stFileUploader"] * {
+        color: #1a202c !important;
     }
     
     [data-testid="stFileUploader"] button {
@@ -195,10 +191,14 @@ st.markdown("""
     
     /* Expanders */
     .streamlit-expanderHeader {
-        background-color: #f8fafc;
-        border-left: 3px solid #1e3a5f;
+        background-color: #f8fafc !important;
+        border-left: 3px solid #1e3a5f !important;
         font-weight: 600;
-        color: #1e3a5f;
+        color: #1e3a5f !important;
+    }
+    
+    .streamlit-expanderHeader * {
+        color: #1e3a5f !important;
     }
     
     /* DataFrames */
@@ -212,45 +212,82 @@ st.markdown("""
         font-weight: 600;
     }
     
+    .dataframe td {
+        color: #1a202c !important;
+        background-color: #ffffff !important;
+    }
+    
     /* Tabs */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
     }
     
     .stTabs [data-baseweb="tab"] {
-        background-color: #f8fafc;
-        color: #1e3a5f;
+        background-color: #f8fafc !important;
+        color: #1e3a5f !important;
         border-radius: 6px 6px 0 0;
         padding: 10px 20px;
         font-weight: 600;
     }
     
     .stTabs [aria-selected="true"] {
-        background-color: #1e3a5f;
+        background-color: #1e3a5f !important;
+        color: white !important;
+    }
+    
+    .stTabs [aria-selected="true"] * {
         color: white !important;
     }
     
     /* Info/Success/Warning boxes */
     .stAlert {
-        border-radius: 8px;
-        border-left-width: 4px;
+        border-radius: 8px !important;
+        border-left-width: 4px !important;
+        background-color: #ffffff !important;
+    }
+    
+    .stAlert * {
+        color: #1a202c !important;
     }
     
     /* Download button */
     .stDownloadButton > button {
-        background-color: #1e3a5f;
-        color: white;
+        background-color: #1e3a5f !important;
+        color: white !important;
         border-radius: 8px;
+    }
+    
+    .stDownloadButton > button:hover {
+        background-color: #2d5a8f !important;
     }
     
     /* Slider */
     .stSlider [data-baseweb="slider"] {
-        background-color: #1e3a5f;
+        background-color: #1e3a5f !important;
+    }
+    
+    .stSlider * {
+        color: #1a202c !important;
     }
     
     /* Divider */
     hr {
-        border-color: #e2e8f0;
+        border-color: #e2e8f0 !important;
+    }
+    
+    /* Selectbox */
+    .stSelectbox * {
+        color: #1a202c !important;
+    }
+    
+    /* Spinner */
+    .stSpinner > div {
+        border-top-color: #1e3a5f !important;
+    }
+    
+    /* Markdown text */
+    .stMarkdown {
+        color: #1a202c !important;
     }
     </style>
 """, unsafe_allow_html=True)
