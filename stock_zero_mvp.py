@@ -468,26 +468,38 @@ def inventario_basico_app():
     )
 
     # Re-calcular columnas derivadas y guardar en sesión
+# ... (código anterior)
+
+    # Re-calcular columnas derivadas y guardar en sesión
     if not edited_df.empty:
         try:
-            # Asegurar que las columnas son numéricas antes del cálculo
-            edited_df['Stock Actual'] = pd.to_numeric(edited_df['Stock Actual'], errors='coerce').fillna(0)
-            edited_df['Punto de Reorden (PR)'] = pd.to_numeric(edited_df['Punto de Reorden (PR)'], errors='coerce').fillna(0)
-            edited_df['Costo Unitario'] = pd.to_numeric(edited_df['Costo Unitario'], errors='coerce').fillna(0)
-
+            # CORRECCIÓN: Usar .loc para asegurar que estamos tratando con el DataFrame/Series
+            
+            # 1. Copia y conversión a numérico (se asegura que son Series de pandas)
             df_final = edited_df.copy()
-            df_final['Faltante?'] = df_final['Stock Actual'] < df_final['Punto de Reorden (PR)']
-            df_final['Valor Total'] = df_final['Stock Actual'] * df_final['Costo Unitario']
+            df_final.loc[:, 'Stock Actual'] = pd.to_numeric(df_final['Stock Actual'], errors='coerce')
+            df_final.loc[:, 'Punto de Reorden (PR)'] = pd.to_numeric(df_final['Punto de Reorden (PR)'], errors='coerce')
+            df_final.loc[:, 'Costo Unitario'] = pd.to_numeric(df_final['Costo Unitario'], errors='coerce')
+
+            # 2. Aplicar fillna SÓLO después de la conversión exitosa
+            df_final.loc[:, 'Stock Actual'] = df_final['Stock Actual'].fillna(0)
+            df_final.loc[:, 'Punto de Reorden (PR)'] = df_final['Punto de Reorden (PR)'].fillna(0)
+            df_final.loc[:, 'Costo Unitario'] = df_final['Costo Unitario'].fillna(0)
+
+            # 3. Recalcular columnas derivadas
+            df_final.loc[:, 'Faltante?'] = df_final['Stock Actual'] < df_final['Punto de Reorden (PR)']
+            df_final.loc[:, 'Valor Total'] = df_final['Stock Actual'] * df_final['Costo Unitario']
             
             # Guardar el estado editado
             st.session_state['inventario_df'] = df_final
             
         except Exception as e:
-            st.error(f"Error en el cálculo: {e}. Revisa los formatos de números.")
-            # st.stop() # No detenemos para que el usuario pueda corregir
-
+            # st.error(f"Error en el cálculo: {e}. Revisa los formatos de números.") # Quitar esta línea si no es necesario ver el error
+            st.error(f"Error en el cálculo de inventario. Por favor, asegúrate de que todas las columnas numéricas contengan solo números o déjalas vacías. Detalle: {e}") 
+            # Mantener el df_actual anterior si falla el cálculo
+            
     df_actual = st.session_state['inventario_df']
-
+# ... (código posterior)
     # --- Alertas y Totales ---
     st.subheader("2️⃣ Alertas y Totales")
 
