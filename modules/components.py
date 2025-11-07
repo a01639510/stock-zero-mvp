@@ -81,16 +81,12 @@ def sincronizar_puntos_optimos(df_inventario: pd.DataFrame, df_resultados: pd.Da
 
 def inventario_basico_app():
     """Componente completo para la interfaz del control de inventario básico."""
-    # Nota: Se omitió la implementación completa de Streamlit para no duplicar código
     st.header("🛒 Control de Inventario Básico")
     
-    # ... (Lógica completa de la app de inventario) ...
-    
-    # Ejemplo de implementación de la función:
     df_inventario = st.session_state.get('inventario_df')
 
     if df_inventario is None or df_inventario.empty:
-        st.warning("El inventario base está vacío.")
+        st.warning("El inventario base está vacío. Sube datos en la pestaña de Optimización.")
         return 
 
     # Sincronización de datos (si hay resultados)
@@ -100,7 +96,6 @@ def inventario_basico_app():
 
     st.subheader("1️⃣ Inventario Actual (Edición en Vivo)")
     
-    # Simulación de data_editor (la implementación real requiere la lógica de edición completa)
     edited_df = st.data_editor(
         df_inventario, use_container_width=True, key="data_editor_inventario"
     )
@@ -117,7 +112,7 @@ def inventario_basico_app():
             st.session_state['inventario_df'] = df_final
             
         except Exception:
-            pass # Manejo de errores simplificado
+            pass
     
     df_actual = st.session_state['inventario_df']
 
@@ -139,7 +134,7 @@ def inventario_basico_app():
     else: st.success("🎉 Todo el inventario está en niveles óptimos.")
 
     st.markdown("---")
-    #st.download_button(...) # Botón de descarga
+
 
 def crear_grafico_trazabilidad_total(
     df_trazabilidad: pd.DataFrame, 
