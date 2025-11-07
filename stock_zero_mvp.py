@@ -102,10 +102,135 @@ def procesar_multiple_productos(
 
 
 # ============================================
-# INTERFAZ WEB CON STREAMLIT
+# CONFIGURACIÓN DE TEMA
 # ============================================
 
 st.set_page_config(page_title="Stock Zero", page_icon="📦", layout="wide")
+
+# CSS personalizado - Tema Azul Marino
+st.markdown("""
+    <style>
+    /* Fondo principal blanco */
+    .stApp {
+        background-color: #FFFFFF;
+    }
+    
+    /* Sidebar con azul marino */
+    [data-testid="stSidebar"] {
+        background-color: #1e3a5f;
+    }
+    
+    [data-testid="stSidebar"] * {
+        color: #FFFFFF !important;
+    }
+    
+    /* Headers en azul marino */
+    h1, h2, h3 {
+        color: #1e3a5f !important;
+    }
+    
+    /* Botones principales en azul marino */
+    .stButton > button {
+        background-color: #1e3a5f;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 12px 24px;
+        font-weight: 600;
+        transition: all 0.3s;
+    }
+    
+    .stButton > button:hover {
+        background-color: #2d5a8f;
+        box-shadow: 0 4px 12px rgba(30, 58, 95, 0.3);
+    }
+    
+    /* Métricas con borde azul */
+    [data-testid="stMetricValue"] {
+        color: #1e3a5f !important;
+        font-weight: 700;
+    }
+    
+    div[data-testid="stMetric"] {
+        background-color: #f8fafc;
+        padding: 15px;
+        border-radius: 8px;
+        border-left: 4px solid #1e3a5f;
+    }
+    
+    /* File uploader */
+    [data-testid="stFileUploader"] {
+        border: 2px dashed #1e3a5f;
+        border-radius: 8px;
+        padding: 20px;
+        background-color: #f8fafc;
+    }
+    
+    /* Expanders */
+    .streamlit-expanderHeader {
+        background-color: #f8fafc;
+        border-left: 3px solid #1e3a5f;
+        font-weight: 600;
+        color: #1e3a5f;
+    }
+    
+    /* DataFrames */
+    .dataframe {
+        border: 1px solid #e2e8f0 !important;
+    }
+    
+    .dataframe th {
+        background-color: #1e3a5f !important;
+        color: white !important;
+        font-weight: 600;
+    }
+    
+    /* Tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        background-color: #f8fafc;
+        color: #1e3a5f;
+        border-radius: 6px 6px 0 0;
+        padding: 10px 20px;
+        font-weight: 600;
+    }
+    
+    .stTabs [aria-selected="true"] {
+        background-color: #1e3a5f;
+        color: white !important;
+    }
+    
+    /* Info/Success/Warning boxes */
+    .stAlert {
+        border-radius: 8px;
+        border-left-width: 4px;
+    }
+    
+    /* Download button */
+    .stDownloadButton > button {
+        background-color: #1e3a5f;
+        color: white;
+        border-radius: 8px;
+    }
+    
+    /* Slider */
+    .stSlider [data-baseweb="slider"] {
+        background-color: #1e3a5f;
+    }
+    
+    /* Divider */
+    hr {
+        border-color: #e2e8f0;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# ============================================
+# INTERFAZ WEB
+# ============================================
 
 # Header
 st.title("📦 Stock Zero")
@@ -388,8 +513,9 @@ else:
 # Footer
 st.markdown("---")
 st.markdown("""
-<div style='text-align: center; color: #666;'>
-    <p><strong>Stock Zero MVP</strong> - Optimización Multi-Producto con Holt-Winters</p>
+<div style='text-align: center; color: #64748b;'>
+    <p style='color: #1e3a5f; font-weight: 600; font-size: 16px;'>Stock Zero MVP</p>
+    <p>Optimización Multi-Producto con Holt-Winters</p>
     <p>Diseñado para Pymes en México 🇲🇽 | Soporta formato largo y ancho</p>
 </div>
 """, unsafe_allow_html=True)
