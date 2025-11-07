@@ -3,8 +3,9 @@ import pandas as pd
 import numpy as np
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from typing import Dict, Union, List
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -110,23 +111,23 @@ def procesar_multiple_productos(
     return resultados
 
 
-def crear_grafico_comparativo(resultados: List[Dict]) -> go.Figure:
+def crear_grafico_comparativo(resultados: List[Dict]):
     """
-    Crea un gráfico interactivo comparando ventas históricas y pronósticos de múltiples productos.
+    Crea un gráfico comparando ventas históricas y pronósticos de múltiples productos.
     """
-    fig = go.Figure()
+    productos_exitosos = [r for r in resultados if 'error' not in r]
     
     # Paleta de colores
     colores = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
                '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
     
-    productos_exitosos = [r for r in resultados if 'error' not in r]
+    fig, ax = plt.subplots(figsize=(14, 7))
     
     for idx, resultado in enumerate(productos_exitosos):
         color = colores[idx % len(colores)]
         nombre = resultado['producto']
         
-        # Datos históricos (últimos 30 días)
+        # Datos históricos
         df_hist = resultado['datos_historicos']
         fechas_hist = df_hist.index
         ventas_hist = df_hist['cantidad_vendida'].values
@@ -136,84 +137,48 @@ def crear_grafico_comparativo(resultados: List[Dict]) -> go.Figure:
         valores_pron = resultado['pronostico_valores']
         
         # Línea sólida: Ventas históricas
-        fig.add_trace(go.Scatter(
-            x=fechas_hist,
-            y=ventas_hist,
-            mode='lines+markers',
-            name=f'{nombre}',
-            line=dict(color=color, width=2),
-            marker=dict(size=4),
-            legendgroup=nombre,
-            showlegend=True
-        ))
+        ax.plot(fechas_hist, ventas_hist, 
+                color=color, linewidth=2, marker='o', markersize=3,
+                label=f'{nombre}', alpha=0.8)
         
         # Línea punteada: Pronóstico
-        # Conectar último punto histórico con pronóstico
         ultima_fecha_hist = fechas_hist[-1]
         ultimo_valor_hist = ventas_hist[-1]
         
         fechas_pronostico_completo = [ultima_fecha_hist] + fechas_pron
         valores_pronostico_completo = [ultimo_valor_hist] + valores_pron
         
-        fig.add_trace(go.Scatter(
-            x=fechas_pronostico_completo,
-            y=valores_pronostico_completo,
-            mode='lines',
-            name=f'{nombre} (Pronóstico)',
-            line=dict(color=color, width=2, dash='dash'),
-            legendgroup=nombre,
-            showlegend=True
-        ))
+        ax.plot(fechas_pronostico_completo, valores_pronostico_completo,
+                color=color, linewidth=2, linestyle='--', 
+                label=f'{nombre} (Pronóstico)', alpha=0.7)
         
         # Línea horizontal: Punto de reorden
         punto_reorden = resultado['punto_reorden']
         
-        # Extender línea por todo el rango
         todas_fechas = list(fechas_hist) + fechas_pron
-        
-        fig.add_trace(go.Scatter(
-            x=[todas_fechas[0], todas_fechas[-1]],
-            y=[punto_reorden, punto_reorden],
-            mode='lines',
-            name=f'{nombre} - Punto Reorden ({punto_reorden:.0f})',
-            line=dict(color=color, width=1, dash='dot'),
-            legendgroup=nombre,
-            showlegend=True,
-            opacity=0.6
-        ))
+        ax.axhline(y=punto_reorden, color=color, linestyle=':', 
+                   linewidth=1, alpha=0.5,
+                   label=f'{nombre} - Reorden ({punto_reorden:.0f})')
     
     # Configuración del gráfico
-    fig.update_layout(
-        title={
-            'text': '📊 Ventas Históricas vs Pronóstico por Producto',
-            'x': 0.5,
-            'xanchor': 'center',
-            'font': {'size': 20}
-        },
-        xaxis_title='Fecha',
-        yaxis_title='Cantidad Vendida',
-        hovermode='x unified',
-        height=600,
-        legend=dict(
-            orientation="v",
-            yanchor="top",
-            y=1,
-            xanchor="left",
-            x=1.02,
-            font=dict(size=10)
-        ),
-        plot_bgcolor='white',
-        xaxis=dict(
-            showgrid=True,
-            gridwidth=1,
-            gridcolor='lightgray'
-        ),
-        yaxis=dict(
-            showgrid=True,
-            gridwidth=1,
-            gridcolor='lightgray'
-        )
-    )
+    ax.set_xlabel('Fecha', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Cantidad Vendida', fontsize=12, fontweight='bold')
+    ax.set_title('📊 Ventas Históricas vs Pronóstico por Producto', 
+                 fontsize=16, fontweight='bold', pad=20)
+    
+    # Formato de fechas en eje X
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+    ax.xaxis.set_major_locator(mdates.DayLocator(interval=5))
+    plt.xticks(rotation=45, ha='right')
+    
+    # Grid
+    ax.grid(True, alpha=0.3, linestyle='--')
+    
+    # Leyenda fuera del gráfico
+    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', 
+              fontsize=9, framealpha=0.9)
+    
+    plt.tight_layout()
     
     return fig
 
@@ -395,11 +360,11 @@ if uploaded_file is not None:
                 
                 try:
                     fig = crear_grafico_comparativo(exitosos)
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.pyplot(fig)
                     
                     st.info("""
                     **Cómo leer este gráfico:**
-                    - **Líneas sólidas:** Ventas reales de los últimos 30 días
+                    - **Líneas sólidas con puntos:** Ventas reales de los últimos 30 días
                     - **Líneas punteadas:** Pronóstico de ventas futuras (Lead Time)
                     - **Líneas punteadas horizontales:** Punto de reorden (cuando ordenar)
                     - Cuando la demanda proyectada se acerca al punto de reorden, es momento de hacer el pedido
