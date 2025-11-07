@@ -171,6 +171,18 @@ st.markdown("""
         background-color: #f8fafc;
     }
     
+    [data-testid="stFileUploader"] label {
+        color: #1e3a5f !important;
+    }
+    
+    [data-testid="stFileUploader"] section {
+        background-color: #ffffff !important;
+    }
+    
+    [data-testid="stFileUploader"] small {
+        color: #64748b !important;
+    }
+    
     /* Expanders */
     .streamlit-expanderHeader {
         background-color: #f8fafc;
