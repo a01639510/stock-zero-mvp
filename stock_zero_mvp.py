@@ -56,8 +56,10 @@ def calcular_orden_optima_producto(
         stock_seguridad = pronostico_diario_promedio * stock_seguridad_dias
         punto_reorden = demanda_lead_time + stock_seguridad
         
-        # Se mantiene el factor 10 para una orden más reducida
-        cantidad_a_ordenar = pronostico_diario_promedio * 10 
+        # CAMBIO CLAVE AQUÍ: La cantidad a ordenar cubre la mitad de la estacionalidad (ej. 7/2 = 3.5 días)
+        # Esto permite planear la orden para un horizonte definido por el usuario (frecuencia)
+        orden_horizonte_dias = frecuencia_estacional / 2
+        cantidad_a_ordenar = pronostico_diario_promedio * orden_horizonte_dias
         
         # Guardar datos para gráficos (últimos 30 días + pronóstico)
         ultimos_30_dias = df_diario.tail(30).copy()
@@ -155,12 +157,7 @@ def crear_grafico_comparativo(resultados: List[Dict]):
                 color=color, linewidth=2, linestyle='--', 
                 label=f'{nombre} (Pronóstico)', alpha=0.7)
         
-        # >>> INICIO DEL CÓDIGO COMENTADO (Se elimina el Punto de Reorden del gráfico) <<<
-        # punto_reorden = resultado['punto_reorden']
-        # ax.axhline(y=punto_reorden, color=color, linestyle=':', 
-        #            linewidth=1, alpha=0.5,
-        #            label=f'{nombre} - Reorden ({punto_reorden:.0f})')
-        # >>> FIN DEL CÓDIGO COMENTADO <<<
+        # Se omite el Punto de Reorden del gráfico.
     
     # Configuración del gráfico
     ax.set_xlabel('Fecha', fontsize=12, fontweight='bold')
@@ -387,6 +384,9 @@ if uploaded_file is not None:
                 total_reorden = df_resultados['punto_reorden'].sum()
                 total_ordenar = df_resultados['cantidad_a_ordenar'].sum()
                 
+                # Obtener la cobertura actual de la orden para la interpretación
+                cobertura_orden = frecuencia / 2
+                
                 # Métricas generales
                 col1, col2, col3 = st.columns(3)
                 with col1:
@@ -430,9 +430,7 @@ if uploaded_file is not None:
                 st.markdown("---")
                 st.markdown("### 🔝 Top 5 Productos Prioritarios")
                 
-                top5 = df_resultados.head(5)
-                
-                for idx, row in top5.iterrows():
+                for idx, row in df_resultados.head(5).iterrows():
                     col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
                     with col1:
                         st.markdown(f"**{row['producto']}**")
@@ -443,15 +441,15 @@ if uploaded_file is not None:
                     with col4:
                         st.metric("Diario", f"{row['pronostico_diario_promedio']:.1f}")
                 
-                # Interpretación
+                # Interpretación (Actualizada para la nueva lógica)
                 st.markdown("---")
                 st.markdown("### 💡 ¿Cómo usar estos resultados?")
-                st.markdown("""
+                st.markdown(f"""
                 **Para cada producto:**
                 
                 1. **Punto de Reorden:** Cuando tu inventario llegue a esta cantidad, es momento de ordenar.
                 
-                2. **Cantidad a Ordenar:** La cantidad óptima que debes pedir para cubrir **~10 días** de demanda proyectada.
+                2. **Cantidad a Ordenar:** La cantidad óptima que debes pedir para cubrir aproximadamente **{cobertura_orden} días** de demanda proyectada (la mitad de la estacionalidad seleccionada).
                 
                 3. **Venta Diaria Promedio:** Tu demanda esperada por día según el análisis.
                 
