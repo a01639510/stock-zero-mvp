@@ -115,6 +115,11 @@ st.markdown("""
         background-color: #FFFFFF;
     }
     
+    /* Texto principal en gris oscuro */
+    .stApp, .stMarkdown, p, span, label {
+        color: #1a202c !important;
+    }
+    
     /* Sidebar con azul marino */
     [data-testid="stSidebar"] {
         background-color: #1e3a5f;
