@@ -124,20 +124,15 @@ def procesar_multiple_productos(
     # Convertir a DataFrame temporal para Clasificación ABC
     df_resultados = pd.DataFrame(resultados)
 
-    # Asegurar que la columna 'error' existe para un manejo más limpio
-    # Esta columna ya debería existir desde calcular_orden_optima_producto, pero la comprobamos
     if 'error' not in df_resultados.columns:
         df_resultados['error'] = None
     
-    # 1. Preparar el DataFrame para ABC
-    # Crea la columna 'clasificacion_abc' con valor predeterminado 'N/A'
     df_resultados['clasificacion_abc'] = 'N/A'
 
-    # Solo clasificar productos sin errores (error.isnull()) y que tienen ventas (> 0)
     df_abc = df_resultados[df_resultados['error'].isnull() & (df_resultados['volumen_total_vendido'] > 0)].copy()
     
     if not df_abc.empty:
-        # 2. Ordenar por volumen total de venta (valor/volumen estratégico)
+        # 2. Ordenar por volumen total de venta
         df_abc = df_abc.sort_values('volumen_total_vendido', ascending=False)
         
         # 3. Calcular porcentaje y porcentaje acumulado
@@ -162,144 +157,182 @@ def procesar_multiple_productos(
         df_resultados.loc[df_abc.index, 'clasificacion_abc'] = df_abc['clasificacion_abc']
     
     return df_resultados.to_dict('records')
- 
-def crear_grafico_inventario_proyectado(resultado: Dict, stock_actual: float, lead_time: int):
-    """
-    Crea un gráfico de la simulación del Nivel de Inventario vs. el tiempo,
-    usando el stock actual como punto de partida y el pronóstico como demanda.
-    """
-    nombre = resultado['producto']
-    punto_reorden = resultado['punto_reorden']
-    cantidad_a_ordenar = resultado['cantidad_a_ordenar']
-    demanda_diaria = resultado['pronostico_diario_promedio']
 
-    # --- SIMULACIÓN DEL NIVEL DE INVENTARIO ---
+# ============================================
+# FUNCIONES DE TRAZABILIDAD Y GRÁFICOS (NUEVOS)
+# ============================================
+
+def calcular_trazabilidad_inventario(
+    df_ventas: pd.DataFrame, 
+    df_entradas: pd.DataFrame, 
+    nombre_producto: str, 
+    stock_actual_manual: float,
+    pronostico_diario_promedio: float,
+    lead_time: int
+):
+    """
+    Calcula la trazabilidad histórica del stock y la proyecta al futuro.
+    """
     
-    # Días totales a proyectar (Lead Time + buffer)
-    dias_proyeccion = lead_time + 10 
-    fechas = pd.date_range(start=datetime.now().date(), periods=dias_proyeccion, name='Fecha')
+    # 1. PREPARACIÓN DE DATOS DIARIOS
     
-    nivel_inventario = [stock_actual]
-    stock = stock_actual
+    # Filtrar ventas y entradas por producto
+    ventas_prod = df_ventas[df_ventas['producto'] == nombre_producto][['fecha', 'cantidad_vendida']]
+    entradas_prod = df_entradas[df_entradas['producto'] == nombre_producto][['fecha', 'cantidad_recibida']]
+
+    # Si no hay datos, retorna None
+    if ventas_prod.empty and entradas_prod.empty:
+        return None
+
+    # Encontrar rango de fechas
+    min_date = min(ventas_prod['fecha'].min(), entradas_prod['fecha'].min() if not entradas_prod.empty else datetime.now()).date()
+    max_date_hist = max(ventas_prod['fecha'].max(), entradas_prod['fecha'].max() if not entradas_prod.empty else min_date).date()
+
+    # Días totales a proyectar (Hasta el fin del Lead Time + 10 días de buffer)
+    dias_proyeccion = (datetime.now().date() - min_date).days + lead_time + 10
+    fechas = pd.date_range(start=min_date, periods=dias_proyeccion, name='Fecha')
     
-    # Simular día por día
-    for i in range(1, dias_proyeccion):
-        # El stock baja por la demanda proyectada
-        stock -= demanda_diaria
+    df_diario = pd.DataFrame(index=fechas)
+    df_diario['Ventas'] = 0.0
+    df_diario['Entradas'] = 0.0
+    
+    # Mapear ventas y entradas a la serie diaria
+    if not ventas_prod.empty:
+        ventas_diarias = ventas_prod.set_index('fecha').resample('D').sum()['cantidad_vendida'].fillna(0)
+        df_diario.loc[ventas_diarias.index, 'Ventas'] = ventas_diarias
         
-        # Simulación de la orden:
-        # Si el stock proyectado cae por debajo del PR Y estás en el día de entrega
-        # (Esto es una simplificación: asumimos que ordenas hoy para que llegue en Lead Time)
-        if i == lead_time and stock <= punto_reorden:
-            stock += cantidad_a_ordenar
+    if not entradas_prod.empty:
+        entradas_diarias = entradas_prod.set_index('fecha').resample('D').sum()['cantidad_recibida'].fillna(0)
+        df_diario.loc[entradas_diarias.index, 'Entradas'] = entradas_diarias
+
+    # 2. CÁLCULO DEL INVENTARIO HISTÓRICO
+    
+    df_diario['Stock'] = 0.0
+    
+    # Usar el Stock Actual Manual para inicializar el stock el día de hoy
+    # El stock histórico se calculará hacia atrás.
+    fecha_actual = datetime.now().date()
+    
+    # Llenar el stock histórico:
+    stock_t = stock_actual_manual
+    
+    # Iterar hacia atrás desde la fecha actual hasta la fecha mínima
+    for date in reversed(df_diario.index):
+        if date.date() > fecha_actual:
+            # Si es futuro, el stock se proyectará más tarde
+            continue 
+        
+        df_diario.loc[date, 'Stock'] = stock_t
+        
+        # Calcular el stock del día anterior:
+        # Stock_t-1 = Stock_t + Ventas_t - Entradas_t
+        ventas_t = df_diario.loc[date, 'Ventas']
+        entradas_t = df_diario.loc[date, 'Entradas']
+        
+        stock_t = stock_t + ventas_t - entradas_t
+        stock_t = max(0, stock_t) # El stock histórico no puede ser negativo
+        
+    # 3. PROYECCIÓN DEL INVENTARIO FUTURO
+    
+    # El stock del día de hoy es el stock actual manual
+    df_diario.loc[fecha_actual, 'Stock'] = stock_actual_manual
+
+    # Proyectar desde la fecha actual + 1 día
+    for date in df_diario.index:
+        if date.date() > fecha_actual:
             
-        nivel_inventario.append(max(0, stock)) # El stock no puede ser negativo
-        
-    df_proyeccion = pd.DataFrame({
-        'Fecha': fechas,
-        'Nivel de Inventario': nivel_inventario
-    })
+            # Stock_t = Stock_t-1 - Pronóstico_Diario
+            stock_anterior = df_diario.loc[df_diario.index[df_diario.index.get_loc(date) - 1], 'Stock']
+            stock_proyectado = stock_anterior - pronostico_diario_promedio
+            
+            df_diario.loc[date, 'Stock'] = max(0, stock_proyectado)
+            
+    # Marcar la división entre histórico y futuro
+    df_diario['Tipo'] = np.where(df_diario.index.date <= fecha_actual, 'Histórico', 'Proyectado')
     
-    # --- GRÁFICO ---
-
-    fig, ax = plt.subplots(figsize=(12, 6))
-    
-    # 1. Nivel de Inventario Proyectado
-    ax.plot(df_proyeccion['Fecha'], df_proyeccion['Nivel de Inventario'], 
-            color='#1f77b4', linewidth=3, 
-            label='Nivel de Inventario Proyectado')
-    
-    # 2. Línea del Punto de Reorden (PR)
-    ax.axhline(y=punto_reorden, color='red', linestyle='-', 
-               linewidth=1.5, alpha=0.8,
-               label=f'Punto de Reorden ({punto_reorden:.0f})')
-               
-    # 3. Línea del Stock Máximo Teórico (PR + OA)
-    stock_maximo = punto_reorden + cantidad_a_ordenar
-    ax.axhline(y=stock_maximo, color='green', linestyle=':', 
-               linewidth=1.5, alpha=0.6,
-               label=f'Stock Máximo Teórico ({stock_maximo:.0f})')
-               
-    # Configuración del gráfico
-    ax.set_xlabel('Fecha', fontsize=12)
-    ax.set_ylabel('Stock (Unidades)', fontsize=12)
-    ax.set_title(f'📉 Proyección de Inventario y Estrategia para {nombre}', 
-                 fontsize=14, fontweight='bold', pad=15)
-    
-    ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-    ax.xaxis.set_major_locator(mdates.DayLocator(interval=3))
-    plt.xticks(rotation=45, ha='right')
-    
-    ax.grid(True, alpha=0.3, linestyle='--')
-    ax.legend(loc='upper right', fontsize=9, framealpha=0.9)
-    plt.tight_layout()
-    
-    return fig
+    return df_diario.reset_index()
 
 
-def crear_grafico_individual(resultado: Dict):
+def crear_grafico_trazabilidad_total(
+    df_trazabilidad: pd.DataFrame, 
+    resultado: Dict, 
+    lead_time: int
+):
     """
-    Crea un gráfico detallado para un solo producto, incluyendo el PR y OA.
+    Crea el gráfico de trazabilidad de Inventario (Histórico y Proyectado).
     """
     nombre = resultado['producto']
     punto_reorden = resultado['punto_reorden']
     cantidad_a_ordenar = resultado['cantidad_a_ordenar']
     
-    df_hist = resultado['datos_historicos']
-    fechas_hist = df_hist.index
-    ventas_hist = df_hist['cantidad_vendida'].values
-    
-    fechas_pron = resultado['pronostico_fechas']
-    valores_pron = resultado['pronostico_valores']
-    
     fig, ax = plt.subplots(figsize=(12, 6))
     
-    # 1. Ventas Históricas
-    ax.plot(fechas_hist, ventas_hist, 
-            color='#1f77b4', linewidth=2, marker='o', markersize=4,
-            label='Ventas Históricas')
+    # Filtrar datos
+    df_hist = df_trazabilidad[df_trazabilidad['Tipo'] == 'Histórico']
+    df_proj = df_trazabilidad[df_trazabilidad['Tipo'] == 'Proyectado']
     
-    # 2. Pronóstico
-    ultima_fecha_hist = fechas_hist.max()
-    ultimo_valor_hist = df_hist.loc[ultima_fecha_hist, 'cantidad_vendida']
-    
-    fechas_pronostico_completo = [ultima_fecha_hist] + fechas_pron
-    valores_pronostico_completo = [ultimo_valor_hist] + valores_pron
-    
-    ax.plot(fechas_pronostico_completo, valores_pronostico_completo,
-            color='#ff7f0e', linewidth=2, linestyle='--', 
-            label='Pronóstico (Lead Time)')
-    
+    # 1. Stock Histórico (Línea Sólida)
+    ax.plot(df_hist['Fecha'], df_hist['Stock'], 
+            color='#1f77b4', linewidth=3, 
+            label='Stock Real Histórico')
+            
+    # 2. Stock Proyectado (Línea Punteada)
+    ax.plot(df_proj['Fecha'], df_proj['Stock'], 
+            color='#ff7f0e', linewidth=2, linestyle='--',
+            label='Stock Proyectado (Demanda media)')
+
     # 3. Línea del Punto de Reorden (PR)
     ax.axhline(y=punto_reorden, color='red', linestyle='-', 
                linewidth=1.5, alpha=0.8,
                label=f'Punto de Reorden ({punto_reorden:.0f})')
                
-    # 4. Línea del Stock Máximo (PR + OA)
+    # 4. Línea del Stock Máximo Teórico (PR + OA)
     stock_maximo = punto_reorden + cantidad_a_ordenar
     ax.axhline(y=stock_maximo, color='green', linestyle=':', 
                linewidth=1.5, alpha=0.6,
-               label=f'Stock Máximo ({stock_maximo:.0f})')
+               label=f'Stock Máximo Teórico ({stock_maximo:.0f})')
                
-    # Rellenar zona de Stock de Seguridad
-    ax.axhspan(0, punto_reorden, facecolor='red', alpha=0.05, label='Zona de Reorden')
+    # Resaltar la fecha actual
+    fecha_actual = datetime.now().date()
+    ax.axvline(x=fecha_actual, color='gray', linestyle='-.', alpha=0.5, label='Fecha Actual')
     
     # Configuración del gráfico
     ax.set_xlabel('Fecha', fontsize=12)
-    ax.set_ylabel('Cantidad de Inventario', fontsize=12)
-    ax.set_title(f'Estrategia de Inventario (PR y OA) para {nombre}', 
+    ax.set_ylabel('Stock (Unidades)', fontsize=12)
+    ax.set_title(f'📉 Trazabilidad y Proyección de Inventario para {nombre}', 
                  fontsize=14, fontweight='bold', pad=15)
     
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-    ax.xaxis.set_major_locator(mdates.DayLocator(interval=5))
+    ax.xaxis.set_major_locator(mdates.DayLocator(interval=max(1, len(df_trazabilidad) // 10))) # Intervalo dinámico
     plt.xticks(rotation=45, ha='right')
     
     ax.grid(True, alpha=0.3, linestyle='--')
     ax.legend(loc='upper right', fontsize=9, framealpha=0.9)
-    
     plt.tight_layout()
     
     return fig
+
+
+def crear_grafico_comparativo(resultados: List[Dict]):
+    # Mantenemos la función comparativa para una visión general
+    # ... (código de crear_grafico_comparativo - No está en el código provisto, asumo que existe o la omitiremos)
+    # Por ahora, para no romper nada, crearemos una función placeholder:
+    
+    df = pd.DataFrame([r for r in resultados if 'error' not in r])
+    if df.empty:
+        return plt.figure()
+        
+    df_sorted = df.sort_values('volumen_total_vendido', ascending=False)
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.bar(df_sorted['producto'], df_sorted['volumen_total_vendido'], color='skyblue')
+    ax.set_title('Volumen Total de Ventas por Producto')
+    ax.set_ylabel('Unidades Vendidas')
+    ax.tick_params(axis='x', rotation=45)
+    plt.tight_layout()
+    return fig
+    
+# La función crear_grafico_individual se ELIMINA ya que es redundante con el nuevo gráfico de Trazabilidad Total
 
 
 # ============================================
@@ -446,75 +479,82 @@ with tab_optimizacion:
         st.markdown("---")
         st.markdown("### 💡 Formatos Aceptados")
         st.markdown("""
-        **Formato Largo** (Recomendado):
-        - fecha
-        - producto
-        - cantidad_vendida
+        **Ventas:** `fecha`, `producto`, `cantidad_vendida`
+        **Stock:** `fecha`, `producto`, `cantidad_recibida`
         """)
 
-    # Upload CSV
-    st.markdown("### 1️⃣ Sube tu archivo de ventas")
-    uploaded_file = st.file_uploader(
-        "Selecciona tu archivo CSV",
-        type=['csv'],
-        help="Debe tener historial de ventas en formato largo o ancho."
-    )
+    # --- Carga de Archivos ---
+    st.markdown("### 1️⃣ Sube tus archivos (Ventas y Stock)")
     
-    with st.expander("📋 Ver formatos de archivo aceptados"):
-        tab1, tab2 = st.tabs(["Formato Largo (Recomendado)", "Formato Ancho"])
-        
-        with tab1:
-            st.markdown("**Ideal para restaurantes con POS**")
-            ejemplo_largo = pd.DataFrame({
-                'fecha': ['2024-09-01', '2024-09-01', '2024-09-01', '2024-09-02', '2024-09-02', '2024-09-02'],
-                'producto': ['Cerveza Corona', 'Tacos al Pastor', 'Coca-Cola', 'Cerveza Corona', 'Tacos al Pastor', 'Coca-Cola'],
-                'cantidad_vendida': [45, 120, 38, 52, 135, 41]
-            })
-            st.dataframe(ejemplo_largo, use_container_width=True)
-        
-        with tab2:
-            st.markdown("**Típico de hojas de Excel**")
-            ejemplo_ancho = pd.DataFrame({
-                'fecha': ['2024-09-01', '2024-09-02', '2024-09-03'],
-                'Cerveza Corona': [45, 52, 48],
-                'Tacos al Pastor': [120, 135, 128],
-                'Coca-Cola': [38, 41, 35]
-            })
-            st.dataframe(ejemplo_ancho, use_container_width=True)
+    col_ventas, col_stock = st.columns(2)
+    
+    with col_ventas:
+        uploaded_file_ventas = st.file_uploader(
+            "Archivo CSV de **Ventas Históricas** (Requerido)",
+            type=['csv'],
+            key="upload_ventas"
+        )
+    
+    with col_stock:
+        uploaded_file_stock = st.file_uploader(
+            "Archivo CSV de **Entradas de Stock** (Opcional para Trazabilidad)",
+            type=['csv'],
+            key="upload_stock"
+        )
 
-
-    # Procesar archivo
-    if uploaded_file is not None:
+    # Procesar archivo de VENTAS
+    if uploaded_file_ventas is not None:
         try:
-            df_raw = pd.read_csv(uploaded_file)
+            df_raw_ventas = pd.read_csv(uploaded_file_ventas)
             
+            # Detección de formato para VENTAS (mismo código anterior)
             formato_detectado = None
-            if 'producto' in df_raw.columns and 'cantidad_vendida' in df_raw.columns:
+            if 'producto' in df_raw_ventas.columns and 'cantidad_vendida' in df_raw_ventas.columns:
                 formato_detectado = "largo"
-                df = df_raw.copy()
-            elif 'fecha' in df_raw.columns and len(df_raw.columns) > 2:
+                df_ventas = df_raw_ventas.copy()
+            elif 'fecha' in df_raw_ventas.columns and len(df_raw_ventas.columns) > 2:
                 formato_detectado = "ancho"
-                df = df_raw.melt(id_vars=['fecha'], var_name='producto', value_name='cantidad_vendida')
+                df_ventas = df_raw_ventas.melt(id_vars=['fecha'], var_name='producto', value_name='cantidad_vendida')
             else:
-                st.error("❌ Formato no reconocido.")
+                st.error("❌ Formato de VENTAS no reconocido.")
                 st.stop()
             
-            df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
-            df = df.dropna(subset=['fecha'])
-            df['cantidad_vendida'] = pd.to_numeric(df['cantidad_vendida'], errors='coerce').fillna(0)
+            df_ventas['fecha'] = pd.to_datetime(df_ventas['fecha'], errors='coerce')
+            df_ventas = df_ventas.dropna(subset=['fecha'])
+            df_ventas['cantidad_vendida'] = pd.to_numeric(df_ventas['cantidad_vendida'], errors='coerce').fillna(0)
             
+            # Procesar archivo de STOCK (Nuevo)
+            df_stock = pd.DataFrame(columns=['fecha', 'producto', 'cantidad_recibida']) # DF vacío por defecto
+            if uploaded_file_stock is not None:
+                try:
+                    df_raw_stock = pd.read_csv(uploaded_file_stock)
+                    if 'fecha' in df_raw_stock.columns and 'producto' in df_raw_stock.columns and 'cantidad_recibida' in df_raw_stock.columns:
+                        df_stock = df_raw_stock.copy()
+                        df_stock['fecha'] = pd.to_datetime(df_stock['fecha'], errors='coerce')
+                        df_stock = df_stock.dropna(subset=['fecha'])
+                        df_stock['cantidad_recibida'] = pd.to_numeric(df_stock['cantidad_recibida'], errors='coerce').fillna(0)
+                        st.success("✅ Historial de Entradas de Stock cargado.")
+                    else:
+                        st.warning("⚠️ El archivo de STOCK no contiene las columnas esperadas: `fecha`, `producto`, `cantidad_recibida`. La trazabilidad histórica no estará disponible.")
+                        df_stock = pd.DataFrame(columns=['fecha', 'producto', 'cantidad_recibida'])
+
+                except Exception as e:
+                    st.error(f"Error al procesar el archivo de STOCK: {str(e)}")
+                    df_stock = pd.DataFrame(columns=['fecha', 'producto', 'cantidad_recibida'])
+
+
             st.markdown("### 2️⃣ Datos cargados correctamente")
             
             col1, col2, col3, col4 = st.columns(4)
-            with col1: st.metric("📁 Formato detectado", formato_detectado.upper())
-            with col2: st.metric("📦 Productos únicos", df['producto'].nunique())
-            with col3: st.metric("📅 Total registros", len(df))
-            with col4: st.metric("📊 Días de datos", (df['fecha'].max() - df['fecha'].min()).days + 1)
+            with col1: st.metric("📁 Formato Ventas", formato_detectado.upper())
+            with col2: st.metric("📦 Productos únicos", df_ventas['producto'].nunique())
+            with col3: st.metric("📅 Total registros Ventas", len(df_ventas))
+            with col4: st.metric("📊 Días de datos Ventas", (df_ventas['fecha'].max() - df_ventas['fecha'].min()).days + 1)
             
-            with st.expander("👁️ Ver datos cargados"):
-                st.dataframe(df.head(20), use_container_width=True)
+            with st.expander("👁️ Ver datos de Ventas"):
+                st.dataframe(df_ventas.head(20), use_container_width=True)
             
-            productos = sorted(df['producto'].unique())
+            productos = sorted(df_ventas['producto'].unique())
             st.markdown(f"**Productos encontrados:** {', '.join(productos)}")
             
             st.markdown("### 3️⃣ Calcular Inventario Óptimo")
@@ -522,7 +562,7 @@ with tab_optimizacion:
             if st.button("🚀 Calcular para TODOS los productos", type="primary", use_container_width=True):
                 with st.spinner(f"Analizando {len(productos)} productos..."):
                     resultados = procesar_multiple_productos(
-                        df,
+                        df_ventas,
                         lead_time,
                         stock_seguridad,
                         frecuencia
@@ -562,26 +602,21 @@ with tab_optimizacion:
                     st.dataframe(df_display, use_container_width=True, hide_index=True)
                     
                     st.info("""
-                    **Clasificación ABC:**
-                    - **A:** Productos de alta importancia/valor (80% del volumen total). Requieren seguimiento estricto.
-                    - **B:** Productos de importancia media (15% siguiente del volumen total).
-                    - **C:** Productos de baja importancia/valor (último 5% del volumen total). Gestión más sencilla.
+                    **Clasificación ABC:** **A** (80% del volumen), **B** (15% del volumen), **C** (5% restante).
                     """)
                     
                     # ============================================
-                    # GRÁFICOS INDIVIDUALES Y ESTRATEGIA VISUAL
+                    # GRÁFICO DE TRAZABILIDAD TOTAL (NUEVO CORE)
                     # ============================================
-                    
-                    # 1. Gráfico de Proyección de Inventario (el que usa el stock actual)
                     st.markdown("---")
-                    st.markdown("### 📉 Proyección de Nivel de Inventario (¡NUEVO!)")
+                    st.markdown("### 📈 Trazabilidad de Inventario (Histórico y Proyectado)")
                     
                     # Cargar el DF de Inventario Básico del state
                     df_inv_basico = st.session_state.get('inventario_df', pd.DataFrame())
                     
                     # Selector de producto
                     producto_seleccionado_inv = st.selectbox(
-                        "Selecciona un producto para ver la simulación de su Nivel de Inventario (Stock vs. Tiempo):",
+                        "Selecciona un producto para ver la trazabilidad de stock:",
                         options=df_exitosos['producto'].tolist(),
                         key="selector_inventario_proyectado"
                     )
@@ -589,72 +624,64 @@ with tab_optimizacion:
                     if producto_seleccionado_inv:
                         resultado_prod = df_exitosos[df_exitosos['producto'] == producto_seleccionado_inv].iloc[0].to_dict()
                         
-                        # Intentar obtener el Stock Actual del inventario básico
+                        # Obtener Stock Actual
+                        stock_actual = 0.0
                         if not df_inv_basico.empty and 'Producto' in df_inv_basico.columns:
-                            # Nota: 'producto' en df_exitosos debe coincidir con 'Producto' en df_inv_basico
                             stock_row = df_inv_basico[df_inv_basico['Producto'] == producto_seleccionado_inv]
                             if not stock_row.empty:
-                                # Asegurar que 'Stock Actual' es numérico
                                 stock_actual = pd.to_numeric(stock_row['Stock Actual'].iloc[0], errors='coerce').fillna(0)
-                                
-                                # Generar el nuevo gráfico de Nivel de Inventario
-                                fig_proyeccion = crear_grafico_inventario_proyectado(
-                                    resultado_prod,
-                                    stock_actual,
-                                    lead_time
-                                )
-                                st.pyplot(fig_proyeccion)
-                                
-                                st.info(f"""
-                                **Análisis de Proyección (Stock Actual: {stock_actual:.0f} unidades):**
-                                - **Línea Azul:** Simula la caída del stock y el reabastecimiento planeado.
-                                - **Línea Roja (PR):** El stock toca esta línea al final del Lead Time (día **{lead_time}**).
-                                - **Conclusión:** Si el stock cae a cero antes de la llegada del pedido, el PR y/o el Stock de Seguridad son insuficientes.
-                                """)
                             else:
-                                st.warning(f"⚠️ **{producto_seleccionado_inv}** no encontrado en la pestaña de Control de Inventario Básico. Usando Stock Actual = 0 para la simulación.")
-                                fig_proyeccion = crear_grafico_inventario_proyectado(resultado_prod, 0.0, lead_time)
-                                st.pyplot(fig_proyeccion)
+                                st.warning(f"⚠️ **{producto_seleccionado_inv}** no encontrado en la pestaña de Control de Inventario Básico. Usando Stock Actual = 0.")
                         else:
-                            st.warning("⚠️ El Control de Inventario Básico no está cargado. No se puede simular el nivel de stock. Revisa la pestaña 'Control de Inventario Básico'.")
-
-                    
-                    # 2. Gráfico de Ventas/Pronóstico (el original)
-                    st.markdown("---")
-                    st.markdown("### 📊 Tendencias de Ventas Históricas y Pronóstico (PR/OA)")
-                    
-                    producto_seleccionado_ventas = st.selectbox(
-                        "Selecciona un producto para ver el historial de ventas y el PR/OA contra el Pronóstico:",
-                        options=df_exitosos['producto'].tolist(),
-                        key="selector_ventas_historicas"
-                    )
-                    
-                    if producto_seleccionado_ventas:
-                        resultado_prod = df_exitosos[df_exitosos['producto'] == producto_seleccionado_ventas].iloc[0].to_dict()
-                        # Usamos la función crear_grafico_individual original
-                        fig_individual = crear_grafico_individual(resultado_prod)
-                        st.pyplot(fig_individual)
+                            st.warning("⚠️ El Control de Inventario Básico no está cargado. Usando Stock Actual = 0.")
                         
-                        st.info("""
-                        **Cómo leer este gráfico (PR/OA):**
-                        - **Línea Roja (PR) y Verde (Stock Máximo):** Muestran los umbrales de reorden y stock máximo en unidades de **venta diaria**.
-                        - **Este gráfico es para entender el cálculo del PR y el Pronóstico.** Usa el gráfico de Proyección de Inventario (arriba) para ver el impacto en tu stock actual.
-                        """)
+                        # Generar Trazabilidad Total
+                        df_trazabilidad = calcular_trazabilidad_inventario(
+                            df_ventas,
+                            df_stock,
+                            producto_seleccionado_inv,
+                            stock_actual,
+                            resultado_prod['pronostico_diario_promedio'],
+                            lead_time
+                        )
 
+                        if df_trazabilidad is not None:
+                            fig_trazabilidad = crear_grafico_trazabilidad_total(
+                                df_trazabilidad,
+                                resultado_prod,
+                                lead_time
+                            )
+                            st.pyplot(fig_trazabilidad)
+                            
+                            st.info(f"""
+                            **Análisis de Trazabilidad (Stock Actual: {stock_actual:.0f} unidades):**
+                            - **Línea Azul (Stock Real):** Muestra cómo se comportó el inventario históricamente (requiere archivo de Entradas de Stock).
+                            - **Línea Naranja Punteada (Proyectado):** Simula la caída del stock futuro usando el Pronóstico Diario.
+                            - **Línea Roja (PR):** Tu punto crítico. Si la línea de Stock la cruza, estás en riesgo de quiebre.
+                            """)
+                        else:
+                            st.error(f"❌ No hay datos de ventas o stock disponibles para {producto_seleccionado_inv} para generar la trazabilidad.")
+
+                    # Gráfico Comparativo de todos los productos (se mantiene para visión general)
+                    st.markdown("---")
+                    st.markdown("### 📊 Tendencias de Ventas (Visión General)")
+                    fig_comparativo = crear_grafico_comparativo(df_exitosos.to_dict('records'))
+                    st.pyplot(fig_comparativo)
 
                 # Mostrar errores si los hay
                 df_errores = df_resultados[df_resultados['error'].notnull()]
                 if not df_errores.empty:
                     st.markdown("---")
-                    st.warning(f"⚠️ {len(df_errores)} productos no pudieron analizarse:")
+                    st.warning(f"⚠️ {len(df_errores)} productos no pudieron analizarse por datos insuficientes.")
                     for idx, row in df_errores.iterrows():
                         st.error(f"**{row['producto']}:** {row['error']}")
                 
         except Exception as e:
-            st.error(f"Error al procesar el archivo: {str(e)}")
+            st.error(f"Error al procesar el archivo de ventas: {str(e)}")
 
     else:
         st.info("👆 **Comienza subiendo tu archivo CSV de ventas** para obtener el análisis avanzado.")
+
 
 # === PESTAÑA 2: CONTROL DE INVENTARIO BÁSICO ===
 with tab_control_basico:
