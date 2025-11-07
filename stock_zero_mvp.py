@@ -2,50 +2,38 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
-from typing import Dict, Union
+from typing import Dict, Union, List
 import warnings
 warnings.filterwarnings('ignore')
 
 
-def calcular_orden_optima(
-    ruta_archivo_csv: str,
+def calcular_orden_optima_producto(
+    df_producto: pd.DataFrame,
+    nombre_producto: str,
     lead_time: int = 7,
     stock_seguridad_dias: int = 3,
     frecuencia_estacional: int = 7
 ) -> Dict[str, Union[float, str]]:
     """
-    Calcula el punto de reorden y la cantidad óptima a ordenar usando Holt-Winters.
+    Calcula el punto de reorden para UN producto específico.
     """
     try:
-        # 1. CARGA Y VALIDACIÓN DE DATOS
-        df = pd.read_csv(ruta_archivo_csv)
-        
-        if 'fecha' not in df.columns or 'cantidad_vendida' not in df.columns:
-            return {
-                'error': 'El CSV debe contener las columnas: fecha, cantidad_vendida',
-                'punto_reorden': 0.0,
-                'cantidad_a_ordenar': 0.0,
-                'pronostico_diario_promedio': 0.0
-            }
-        
-        df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
-        df = df.dropna(subset=['fecha'])
-        df['cantidad_vendida'] = pd.to_numeric(df['cantidad_vendida'], errors='coerce').fillna(0)
-        
-        # 2. PREPARACIÓN DE SERIE TEMPORAL CONTINUA
+        # Preparar serie temporal
+        df = df_producto.copy()
         df = df.set_index('fecha').sort_index()
         df_diario = df.resample('D').sum()
         df_diario['cantidad_vendida'] = df_diario['cantidad_vendida'].fillna(0)
         
         if len(df_diario) < frecuencia_estacional * 2:
             return {
-                'error': f'Se necesitan al menos {frecuencia_estacional * 2} días de datos históricos',
+                'producto': nombre_producto,
+                'error': f'Datos insuficientes (mínimo {frecuencia_estacional * 2} días)',
                 'punto_reorden': 0.0,
                 'cantidad_a_ordenar': 0.0,
                 'pronostico_diario_promedio': 0.0
             }
         
-        # 3. MODELO HOLT-WINTERS ESTACIONAL
+        # Modelo Holt-Winters
         serie_ventas = df_diario['cantidad_vendida']
         
         modelo = ExponentialSmoothing(
@@ -59,45 +47,58 @@ def calcular_orden_optima(
         pronostico = modelo_ajustado.forecast(steps=lead_time)
         pronostico = pronostico.clip(lower=0)
         
-        # 4. CÁLCULOS DE NEGOCIO
+        # Cálculos
         demanda_lead_time = pronostico.sum()
         pronostico_diario_promedio = pronostico.mean()
         stock_seguridad = pronostico_diario_promedio * stock_seguridad_dias
         punto_reorden = demanda_lead_time + stock_seguridad
         cantidad_a_ordenar = pronostico_diario_promedio * 14
         
-        # 5. PREPARAR OUTPUT
-        resultado = {
+        return {
+            'producto': nombre_producto,
             'punto_reorden': round(punto_reorden, 2),
             'cantidad_a_ordenar': round(cantidad_a_ordenar, 2),
             'pronostico_diario_promedio': round(pronostico_diario_promedio, 2),
             'demanda_lead_time': round(demanda_lead_time, 2),
             'stock_seguridad': round(stock_seguridad, 2),
-            'dias_historicos_analizados': len(df_diario),
-            'configuracion': {
-                'lead_time': lead_time,
-                'stock_seguridad_dias': stock_seguridad_dias,
-                'frecuencia_estacional': frecuencia_estacional
-            }
+            'dias_historicos': len(df_diario)
         }
         
-        return resultado
-        
-    except FileNotFoundError:
-        return {
-            'error': f'Archivo no encontrado: {ruta_archivo_csv}',
-            'punto_reorden': 0.0,
-            'cantidad_a_ordenar': 0.0,
-            'pronostico_diario_promedio': 0.0
-        }
-    
     except Exception as e:
         return {
-            'error': f'Error en el cálculo: {str(e)}',
+            'producto': nombre_producto,
+            'error': f'Error: {str(e)}',
             'punto_reorden': 0.0,
             'cantidad_a_ordenar': 0.0,
             'pronostico_diario_promedio': 0.0
         }
+
+
+def procesar_multiple_productos(
+    df: pd.DataFrame,
+    lead_time: int = 7,
+    stock_seguridad_dias: int = 3,
+    frecuencia_estacional: int = 7
+) -> List[Dict]:
+    """
+    Procesa múltiples productos desde un CSV en formato largo.
+    """
+    resultados = []
+    productos = df['producto'].unique()
+    
+    for producto in productos:
+        df_producto = df[df['producto'] == producto][['fecha', 'cantidad_vendida']].copy()
+        
+        resultado = calcular_orden_optima_producto(
+            df_producto,
+            producto,
+            lead_time,
+            stock_seguridad_dias,
+            frecuencia_estacional
+        )
+        resultados.append(resultado)
+    
+    return resultados
 
 
 # ============================================
@@ -108,7 +109,7 @@ st.set_page_config(page_title="Stock Zero", page_icon="📦", layout="wide")
 
 # Header
 st.title("📦 Stock Zero")
-st.subheader("Optimización de Inventario para Pymes")
+st.subheader("Optimización de Inventario para Pymes - Multi-Producto")
 st.markdown("---")
 
 # Sidebar para configuración
@@ -125,170 +126,270 @@ with st.sidebar:
         format_func=lambda x: f"{x} días ({'Semanal' if x==7 else 'Mensual' if x==30 else 'Quincenal'})",
         help="Patrón de repetición de ventas"
     )
+    
+    st.markdown("---")
+    st.markdown("### 💡 Formatos Aceptados")
+    st.markdown("""
+    **Formato Largo** (Recomendado):
+    - fecha
+    - producto
+    - cantidad_vendida
+    
+    **Formato Ancho**:
+    - fecha
+    - [Producto1]
+    - [Producto2]
+    - ...
+    """)
 
 # Upload CSV
 st.markdown("### 1️⃣ Sube tu archivo de ventas")
-st.markdown("Tu archivo CSV debe contener dos columnas: **fecha** y **cantidad_vendida**")
+st.markdown("Acepta **múltiples productos** en el mismo archivo")
 
 uploaded_file = st.file_uploader(
     "Selecciona tu archivo CSV",
     type=['csv'],
-    help="Formato: fecha (YYYY-MM-DD), cantidad_vendida (número)"
+    help="Puede contener uno o varios productos"
 )
 
-# Mostrar formato ejemplo
-with st.expander("📋 Ver formato de archivo requerido"):
-    ejemplo = pd.DataFrame({
-        'fecha': ['2024-09-01', '2024-09-02', '2024-09-03', '2024-09-04', '2024-09-05'],
-        'cantidad_vendida': [45, 52, 48, 51, 75]
-    })
-    st.dataframe(ejemplo, use_container_width=True)
+# Mostrar ejemplos de formato
+with st.expander("📋 Ver formatos de archivo aceptados"):
+    tab1, tab2 = st.tabs(["Formato Largo (Recomendado)", "Formato Ancho"])
     
-    # Botón para descargar plantilla
-    csv_ejemplo = ejemplo.to_csv(index=False)
-    st.download_button(
-        "⬇️ Descargar Plantilla CSV",
-        csv_ejemplo,
-        "plantilla_stock_zero.csv",
-        "text/csv",
-        help="Descarga esta plantilla y llénala con tus datos"
-    )
+    with tab1:
+        st.markdown("**Ideal para restaurantes con POS**")
+        ejemplo_largo = pd.DataFrame({
+            'fecha': ['2024-09-01', '2024-09-01', '2024-09-01', '2024-09-02', '2024-09-02', '2024-09-02'],
+            'producto': ['Cerveza Corona', 'Tacos al Pastor', 'Coca-Cola', 'Cerveza Corona', 'Tacos al Pastor', 'Coca-Cola'],
+            'cantidad_vendida': [45, 120, 38, 52, 135, 41]
+        })
+        st.dataframe(ejemplo_largo, use_container_width=True)
+        
+        csv_largo = ejemplo_largo.to_csv(index=False)
+        st.download_button(
+            "⬇️ Descargar Plantilla Formato Largo",
+            csv_largo,
+            "plantilla_largo.csv",
+            "text/csv"
+        )
+    
+    with tab2:
+        st.markdown("**Típico de hojas de Excel**")
+        ejemplo_ancho = pd.DataFrame({
+            'fecha': ['2024-09-01', '2024-09-02', '2024-09-03'],
+            'Cerveza Corona': [45, 52, 48],
+            'Tacos al Pastor': [120, 135, 128],
+            'Coca-Cola': [38, 41, 35]
+        })
+        st.dataframe(ejemplo_ancho, use_container_width=True)
+        
+        csv_ancho = ejemplo_ancho.to_csv(index=False)
+        st.download_button(
+            "⬇️ Descargar Plantilla Formato Ancho",
+            csv_ancho,
+            "plantilla_ancho.csv",
+            "text/csv"
+        )
 
 # Procesar archivo
 if uploaded_file is not None:
     try:
-        # Guardar temporalmente
-        with open("temp_ventas.csv", "wb") as f:
-            f.write(uploaded_file.getbuffer())
+        # Leer CSV
+        df_raw = pd.read_csv(uploaded_file)
         
-        # Mostrar preview de datos
-        st.markdown("### 2️⃣ Vista previa de tus datos")
-        df_preview = pd.read_csv("temp_ventas.csv")
+        # Detectar formato (Largo vs Ancho)
+        formato_detectado = None
         
-        col1, col2 = st.columns([2, 1])
+        if 'producto' in df_raw.columns and 'cantidad_vendida' in df_raw.columns:
+            # Formato LARGO
+            formato_detectado = "largo"
+            df = df_raw.copy()
+            
+        elif 'fecha' in df_raw.columns and len(df_raw.columns) > 2:
+            # Formato ANCHO - convertir a largo
+            formato_detectado = "ancho"
+            df = df_raw.melt(
+                id_vars=['fecha'],
+                var_name='producto',
+                value_name='cantidad_vendida'
+            )
+        else:
+            st.error("❌ Formato no reconocido. El archivo debe tener:")
+            st.markdown("- **Formato Largo:** columnas `fecha`, `producto`, `cantidad_vendida`")
+            st.markdown("- **Formato Ancho:** columna `fecha` y una columna por producto")
+            st.stop()
+        
+        # Validar y limpiar datos
+        df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
+        df = df.dropna(subset=['fecha'])
+        df['cantidad_vendida'] = pd.to_numeric(df['cantidad_vendida'], errors='coerce').fillna(0)
+        
+        # Mostrar información del archivo
+        st.markdown("### 2️⃣ Datos cargados correctamente")
+        
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.dataframe(df_preview.head(10), use_container_width=True)
+            st.metric("📁 Formato detectado", formato_detectado.upper())
         with col2:
-            st.metric("Total de registros", len(df_preview))
-            st.metric("Rango de fechas", f"{len(df_preview)} días")
+            num_productos = df['producto'].nunique()
+            st.metric("📦 Productos únicos", num_productos)
+        with col3:
+            st.metric("📅 Total registros", len(df))
+        with col4:
+            dias_datos = (df['fecha'].max() - df['fecha'].min()).days + 1
+            st.metric("📊 Días de datos", dias_datos)
+        
+        # Mostrar preview
+        with st.expander("👁️ Ver datos cargados"):
+            st.dataframe(df.head(20), use_container_width=True)
+        
+        # Lista de productos
+        productos = sorted(df['producto'].unique())
+        st.markdown(f"**Productos encontrados:** {', '.join(productos)}")
         
         # Botón de cálculo
         st.markdown("### 3️⃣ Calcular Inventario Óptimo")
         
-        if st.button("🚀 Calcular Ahora", type="primary", use_container_width=True):
-            with st.spinner("Analizando tus datos con Holt-Winters..."):
-                resultado = calcular_orden_optima(
-                    ruta_archivo_csv="temp_ventas.csv",
-                    lead_time=lead_time,
-                    stock_seguridad_dias=stock_seguridad,
-                    frecuencia_estacional=frecuencia
+        if st.button("🚀 Calcular para TODOS los productos", type="primary", use_container_width=True):
+            with st.spinner(f"Analizando {len(productos)} productos con Holt-Winters..."):
+                resultados = procesar_multiple_productos(
+                    df,
+                    lead_time,
+                    stock_seguridad,
+                    frecuencia
                 )
             
             # Mostrar resultados
             st.markdown("---")
             st.markdown("## 📊 Resultados del Análisis")
             
-            if 'error' in resultado:
-                st.error(f"❌ {resultado['error']}")
-                st.info("💡 **Sugerencias:**\n- Verifica que tu CSV tenga las columnas correctas\n- Asegúrate de tener al menos 14 días de datos\n- Revisa el formato de las fechas (YYYY-MM-DD)")
-            else:
-                # Métricas principales
-                st.success("✅ Análisis completado exitosamente")
+            # Separar exitosos y con errores
+            exitosos = [r for r in resultados if 'error' not in r]
+            con_errores = [r for r in resultados if 'error' in r]
+            
+            if exitosos:
+                st.success(f"✅ Se analizaron exitosamente {len(exitosos)} productos")
                 
+                # Crear DataFrame de resultados
+                df_resultados = pd.DataFrame(exitosos)
+                
+                # Ordenar por cantidad a ordenar (mayor a menor)
+                df_resultados = df_resultados.sort_values('cantidad_a_ordenar', ascending=False)
+                
+                # Calcular totales
+                total_reorden = df_resultados['punto_reorden'].sum()
+                total_ordenar = df_resultados['cantidad_a_ordenar'].sum()
+                
+                # Métricas generales
                 col1, col2, col3 = st.columns(3)
-                
                 with col1:
-                    st.metric(
-                        "🎯 Punto de Reorden",
-                        f"{resultado['punto_reorden']:.0f}",
-                        help="Cuando tu inventario llegue a este nivel, HAZ el pedido"
-                    )
-                    st.caption("unidades")
-                
+                    st.metric("🎯 Total Punto de Reorden", f"{total_reorden:.0f} unidades")
                 with col2:
-                    st.metric(
-                        "📦 Cantidad a Ordenar",
-                        f"{resultado['cantidad_a_ordenar']:.0f}",
-                        help="Ordena esta cantidad para cubrir 14 días de operación"
-                    )
-                    st.caption("unidades")
-                
+                    st.metric("📦 Total a Ordenar", f"{total_ordenar:.0f} unidades")
                 with col3:
-                    st.metric(
-                        "📈 Venta Diaria Promedio",
-                        f"{resultado['pronostico_diario_promedio']:.1f}",
-                        help="Pronóstico de ventas diarias"
-                    )
-                    st.caption("unidades/día")
+                    capital_liberado = (total_ordenar * 1.5) - total_ordenar
+                    st.metric("💰 Capital Liberado", f"{capital_liberado:.0f} unidades")
                 
-                # Detalles adicionales
+                # Tabla de resultados detallada
                 st.markdown("---")
-                st.markdown("#### 📊 Desglose Detallado")
+                st.markdown("### 📋 Recomendaciones por Producto")
                 
-                col1, col2 = st.columns(2)
+                # Formatear tabla para display
+                df_display = df_resultados[['producto', 'punto_reorden', 'cantidad_a_ordenar', 
+                                           'pronostico_diario_promedio', 'dias_historicos']].copy()
                 
-                with col1:
-                    st.info(f"**Demanda durante Lead Time:** {resultado['demanda_lead_time']:.0f} unidades")
-                    st.info(f"**Stock de Seguridad:** {resultado['stock_seguridad']:.0f} unidades")
-                    st.info(f"**Días analizados:** {resultado['dias_historicos_analizados']} días")
+                df_display.columns = ['Producto', 'Punto de Reorden', 'Cantidad a Ordenar', 
+                                     'Venta Diaria Promedio', 'Días Analizados']
                 
-                with col2:
-                    # Calcular ROI aproximado
-                    inventario_tradicional = resultado['cantidad_a_ordenar'] * 1.5
-                    capital_liberado = inventario_tradicional - resultado['cantidad_a_ordenar']
-                    ahorro_porcentaje = (capital_liberado / inventario_tradicional) * 100
-                    
-                    st.success(f"💰 **Capital liberado estimado:** {capital_liberado:.0f} unidades")
-                    st.success(f"📉 **Reducción de inventario:** {ahorro_porcentaje:.1f}%")
-                    st.success(f"✅ **Modelo utilizado:** Holt-Winters Estacional")
+                # Aplicar formato
+                df_display['Punto de Reorden'] = df_display['Punto de Reorden'].apply(lambda x: f"{x:.0f}")
+                df_display['Cantidad a Ordenar'] = df_display['Cantidad a Ordenar'].apply(lambda x: f"{x:.0f}")
+                df_display['Venta Diaria Promedio'] = df_display['Venta Diaria Promedio'].apply(lambda x: f"{x:.1f}")
                 
-                # Interpretación para el cliente
+                st.dataframe(df_display, use_container_width=True, hide_index=True)
+                
+                # Botón de descarga
+                csv_resultados = df_resultados.to_csv(index=False)
+                st.download_button(
+                    "📥 Descargar Resultados Completos (CSV)",
+                    csv_resultados,
+                    "stock_zero_resultados.csv",
+                    "text/csv",
+                    use_container_width=True
+                )
+                
+                # Top 5 productos que más necesitas ordenar
                 st.markdown("---")
-                st.markdown("#### 💡 ¿Qué significa esto para tu negocio?")
+                st.markdown("### 🔝 Top 5 Productos Prioritarios")
                 
-                st.markdown(f"""
-                **Recomendación de Stock Zero:**
+                top5 = df_resultados.head(5)
                 
-                1. **Cuándo ordenar:** Cuando tu inventario llegue a **{resultado['punto_reorden']:.0f} unidades**, es momento de hacer el pedido a tu proveedor.
+                for idx, row in top5.iterrows():
+                    col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
+                    with col1:
+                        st.markdown(f"**{row['producto']}**")
+                    with col2:
+                        st.metric("Reorden", f"{row['punto_reorden']:.0f}")
+                    with col3:
+                        st.metric("A Ordenar", f"{row['cantidad_a_ordenar']:.0f}")
+                    with col4:
+                        st.metric("Diario", f"{row['pronostico_diario_promedio']:.1f}")
                 
-                2. **Cuánto ordenar:** Pide **{resultado['cantidad_a_ordenar']:.0f} unidades** para cubrir aproximadamente 14 días de operación.
+                # Interpretación
+                st.markdown("---")
+                st.markdown("### 💡 ¿Cómo usar estos resultados?")
+                st.markdown("""
+                **Para cada producto:**
                 
-                3. **Beneficio económico:** En lugar de mantener ~{inventario_tradicional:.0f} unidades "por las dudas", solo necesitas {resultado['cantidad_a_ordenar']:.0f} unidades. Esto libera **{capital_liberado:.0f} unidades de capital** que puedes usar en otras áreas de tu negocio.
+                1. **Punto de Reorden:** Cuando tu inventario llegue a esta cantidad, es momento de ordenar.
                 
-                4. **Protección:** El stock de seguridad de {resultado['stock_seguridad']:.0f} unidades te protege de variaciones inesperadas en la demanda.
+                2. **Cantidad a Ordenar:** La cantidad óptima que debes pedir para cubrir ~14 días.
+                
+                3. **Venta Diaria Promedio:** Tu demanda esperada por día según el análisis.
+                
+                **Ejemplo práctico:**
+                - Si "Cerveza Corona" tiene Punto de Reorden = 50 y Cantidad a Ordenar = 100
+                - Cuando te queden 50 cervezas, ordena 100 más
+                - Esto optimiza tu capital y evita faltantes
                 """)
+            
+            # Mostrar errores si los hay
+            if con_errores:
+                st.markdown("---")
+                st.warning(f"⚠️ {len(con_errores)} productos no pudieron analizarse:")
                 
-                # Configuración usada
-                with st.expander("⚙️ Ver configuración del análisis"):
-                    st.json(resultado['configuracion'])
+                for error in con_errores:
+                    st.error(f"**{error['producto']}:** {error['error']}")
                 
+                st.info("💡 **Tip:** Estos productos probablemente necesitan más días de historial de ventas.")
+    
     except Exception as e:
         st.error(f"Error al procesar el archivo: {str(e)}")
-        st.info("Verifica que tu archivo CSV esté en el formato correcto.")
+        st.info("Verifica que tu archivo CSV esté en uno de los formatos aceptados.")
 
 else:
-    # Pantalla inicial cuando no hay archivo
-    st.info("👆 **Comienza subiendo tu archivo CSV de ventas**")
+    # Pantalla inicial
+    st.info("👆 **Comienza subiendo tu archivo CSV de ventas (uno o múltiples productos)**")
     
     col1, col2, col3 = st.columns(3)
     
     with col1:
         st.markdown("### 📋 Paso 1")
-        st.markdown("Prepara tu archivo CSV con el historial de ventas")
+        st.markdown("Sube tu CSV con historial de ventas de todos tus productos")
     
     with col2:
         st.markdown("### ⚙️ Paso 2")
-        st.markdown("Ajusta la configuración según tu negocio")
+        st.markdown("Ajusta la configuración según tu operación")
     
     with col3:
         st.markdown("### 🚀 Paso 3")
-        st.markdown("Obtén recomendaciones precisas de inventario")
+        st.markdown("Obtén recomendaciones para cada producto")
 
 # Footer
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666;'>
-    <p><strong>Stock Zero MVP</strong> - Optimización de inventario basada en Holt-Winters</p>
-    <p>Diseñado para Pymes en México 🇲🇽</p>
+    <p><strong>Stock Zero MVP</strong> - Optimización Multi-Producto con Holt-Winters</p>
+    <p>Diseñado para Pymes en México 🇲🇽 | Soporta formato largo y ancho</p>
 </div>
 """, unsafe_allow_html=True)
