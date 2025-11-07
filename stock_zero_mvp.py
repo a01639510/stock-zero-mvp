@@ -444,7 +444,46 @@ def inventario_basico_app():
         )
     else:
         st.success("🎉 Todo el inventario está en niveles óptimos.")
+    def generar_inventario_base():
+    """Genera un DataFrame base para la sección de inventario, incluyendo productos de ventas."""
+    
+    # 1. Intentar obtener los productos únicos de las ventas cargadas
+    productos_de_ventas = []
+    if 'df_ventas_trazabilidad' in st.session_state:
+        df_ventas = st.session_state['df_ventas_trazabilidad']
+        productos_de_ventas = sorted(df_ventas['producto'].unique().tolist())
+        
+    # 2. Inicializar con datos de ejemplo por defecto (si no hay ventas cargadas)
+    if not productos_de_ventas:
+        productos_base = ['Café en Grano (Kg)', 'Leche Entera (Litros)', 'Vaso 12oz (Unidad)']
+    else:
+        productos_base = productos_de_ventas
 
+    # 3. Construir el DataFrame con valores por defecto
+    data = {
+        'Producto': productos_base,
+        'Categoría': ['Insumo'] * len(productos_base),
+        'Unidad': ['UNI'] * len(productos_base),
+        'Stock Actual': [0.0] * len(productos_base),
+        'Punto de Reorden (PR)': [0.0] * len(productos_base),
+        'Costo Unitario': [1.0] * len(productos_base),
+    }
+    df = pd.DataFrame(data)
+    
+    # Intenta aplicar unidades más lógicas si el nombre del producto lo sugiere
+    df['Unidad'] = np.select(
+        [
+            df['Producto'].str.contains(r'\(Kg\)', na=False),
+            df['Producto'].str.contains(r'\(L\)', na=False),
+            df['Producto'].str.contains(r'\(Uni\)', na=False)
+        ],
+        ['KG', 'L', 'UNI'],
+        default='UNI'
+    )
+    
+    df['Faltante?'] = df['Stock Actual'] < df['Punto de Reorden (PR)']
+    df['Valor Total'] = df['Stock Actual'] * df['Costo Unitario']
+    return df
     # --- Descarga ---
     st.markdown("---")
     st.download_button(
