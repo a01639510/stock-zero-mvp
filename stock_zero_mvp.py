@@ -565,7 +565,7 @@ with tab_optimizacion:
             
             st.markdown("### 3️⃣ Calcular Inventario Óptimo")
             
-            if st.button("🚀 Calcular para TODOS los productos", type="primary", use_container_width=True):
+          if st.button("🚀 Calcular para TODOS los productos", type="primary", use_container_width=True):
                 with st.spinner(f"Analizando {len(productos)} productos..."):
                     resultados = procesar_multiple_productos(
                         df_ventas,
@@ -574,6 +574,51 @@ with tab_optimizacion:
                         frecuencia
                     )
                 
+                # --- SOLUCIÓN: GUARDAR RESULTADOS EN EL ESTADO DE SESIÓN ---
+                st.session_state['df_resultados'] = pd.DataFrame(resultados)
+                st.session_state['df_ventas_trazabilidad'] = df_ventas
+                st.session_state['df_stock_trazabilidad'] = df_stock
+                # --- FIN SOLUCIÓN ---
+                
+                
+            # --- SECCIÓN DE RESULTADOS ---
+            # Solo si ya se calcularon y están en la sesión:
+            if 'df_resultados' in st.session_state:
+                df_resultados = st.session_state['df_resultados']
+                df_exitosos = df_resultados[df_resultados['error'].isnull()].sort_values('cantidad_a_ordenar', ascending=False)
+                
+                st.markdown("---")
+                st.markdown("## 📊 Resultados del Análisis")
+                
+                if not df_exitosos.empty:
+                    st.success(f"✅ Se analizaron exitosamente {len(df_exitosos)} productos")
+                    
+                    # CÁLCULO DE MÉTRICAS (Igual)
+                    total_reorden = df_exitosos['punto_reorden'].sum()
+                    total_ordenar = df_exitosos['cantidad_a_ordenar'].sum()
+                    cobertura_orden = frecuencia / 2
+                    
+                    col1, col2, col3 = st.columns(3)
+                    with col1: st.metric("🎯 Total Punto de Reorden", f"{total_reorden:.0f} unidades")
+                    with col2: st.metric("📦 Total a Ordenar", f"{total_ordenar:.0f} unidades")
+                    with col3: st.metric("💡 Cobertura de la Orden", f"{cobertura_orden} días")
+                    
+                    # TABLA ABC (Igual)
+                    st.markdown("### 📋 Recomendaciones y Clasificación ABC")
+                    
+                    df_display = df_exitosos[['producto', 'clasificacion_abc', 'punto_reorden', 'cantidad_a_ordenar', 
+                                              'pronostico_diario_promedio']].copy()
+                    
+                    df_display.columns = ['Producto', 'ABC', 'Punto de Reorden', 'Cantidad a Ordenar', 'Venta Diaria Promedio']
+                    df_display['Punto de Reorden'] = df_display['Punto de Reorden'].apply(lambda x: f"{x:.0f}")
+                    df_display['Cantidad a Ordenar'] = df_display['Cantidad a Ordenar'].apply(lambda x: f"{x:.0f}")
+                    df_display['Venta Diaria Promedio'] = df_display['Venta Diaria Promedio'].apply(lambda x: f"{x:.1f}")
+                    
+                    st.dataframe(df_display, use_container_width=True, hide_index=True)
+                    
+                    st.info("""
+                    **Clasificación ABC:** **A** (80% del volumen), **B** (15% del volumen), **C** (5% restante).
+                    """)
                 # Convertir lista de diccionarios a DataFrame para manejo más fácil
                 df_resultados = pd.DataFrame(resultados)
                 df_exitosos = df_resultados[df_resultados['error'].isnull()].sort_values('cantidad_a_ordenar', ascending=False)
@@ -614,10 +659,16 @@ with tab_optimizacion:
                     # ============================================
                     # GRÁFICO DE TRAZABILIDAD TOTAL (NUEVO CORE)
                     # ============================================
+                    # ============================================
+                    # GRÁFICO DE TRAZABILIDAD TOTAL Y COMPARATIVO
+                    # ============================================
+                    
                     st.markdown("---")
                     st.markdown("### 📈 Trazabilidad de Inventario (Histórico y Proyectado)")
                     
-                    # Cargar el DF de Inventario Básico del state
+                    # Cargar los datos guardados en el estado de sesión
+                    df_ventas = st.session_state['df_ventas_trazabilidad']
+                    df_stock = st.session_state['df_stock_trazabilidad']
                     df_inv_basico = st.session_state.get('inventario_df', pd.DataFrame())
                     
                     # Selector de producto
@@ -632,14 +683,24 @@ with tab_optimizacion:
                         
                         # Obtener Stock Actual
                         stock_actual = 0.0
+                        mensaje_stock = ""
+                        
                         if not df_inv_basico.empty and 'Producto' in df_inv_basico.columns:
                             stock_row = df_inv_basico[df_inv_basico['Producto'] == producto_seleccionado_inv]
+                            
                             if not stock_row.empty:
                                 stock_actual = pd.to_numeric(stock_row['Stock Actual'].iloc[0], errors='coerce').fillna(0)
+                                if stock_actual == 0:
+                                    mensaje_stock = f"⚠️ **{producto_seleccionado_inv}** encontrado, pero su **Stock Actual es 0**. La simulación de stock será incompleta."
+                                else:
+                                    mensaje_stock = f"Stock actual tomado de **Control de Inventario Básico**."
                             else:
-                                st.warning(f"⚠️ **{producto_seleccionado_inv}** no encontrado en la pestaña de Control de Inventario Básico. Usando Stock Actual = 0.")
+                                mensaje_stock = f"⚠️ **{producto_seleccionado_inv}** no encontrado en la pestaña de Control de Inventario Básico. Usando Stock Actual = 0."
                         else:
-                            st.warning("⚠️ El Control de Inventario Básico no está cargado. Usando Stock Actual = 0.")
+                            mensaje_stock = "⚠️ El Control de Inventario Básico no está cargado. Usando Stock Actual = 0."
+                        
+                        # Mostrar el mensaje de stock antes del gráfico
+                        st.warning(mensaje_stock)
                         
                         # Generar Trazabilidad Total
                         df_trazabilidad = calcular_trazabilidad_inventario(
@@ -668,7 +729,7 @@ with tab_optimizacion:
                         else:
                             st.error(f"❌ No hay datos de ventas o stock disponibles para {producto_seleccionado_inv} para generar la trazabilidad.")
 
-                    # Gráfico Comparativo de todos los productos (se mantiene para visión general)
+                    # --- VISIÓN GENERAL (MOVIDO FUERA DEL SELECTOR) ---
                     st.markdown("---")
                     st.markdown("### 📊 Tendencias de Ventas (Visión General)")
                     fig_comparativo = crear_grafico_comparativo(df_exitosos.to_dict('records'))
