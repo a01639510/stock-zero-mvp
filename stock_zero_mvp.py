@@ -109,6 +109,51 @@ st.set_page_config(page_title="Stock Zero", page_icon="📦", layout="wide")
 
 # CSS personalizado - Tema Azul Marino
 st.markdown("""
+
+
+    <style>
+    /* === FIX: Colores para tabs seleccionados y botones dentro === */
+    
+    /* Texto de encabezado del expander "Ver formatos de archivo aceptado" */
+    .streamlit-expanderHeader {
+        color: white !important;
+        background-color: #1e3a5f !important;
+        border-left: 3px solid #1e3a5f !important;
+    }
+
+    /* Cuando se abre el expander, mantener el fondo claro adentro */
+    .streamlit-expanderContent {
+        background-color: #ffffff !important;
+    }
+
+    /* Tabs (cuando están seleccionados) */
+    .stTabs [aria-selected="true"] {
+        background-color: #1e3a5f !important;
+        color: white !important;
+    }
+
+    /* Texto dentro de los tabs activos */
+    .stTabs [aria-selected="true"] p,
+    .stTabs [aria-selected="true"] span,
+    .stTabs [aria-selected="true"] label,
+    .stTabs [aria-selected="true"] div {
+        color: white !important;
+    }
+
+    /* Botones de descarga dentro de tabs */
+    .stDownloadButton > button {
+        background-color: #1e3a5f !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+    }
+
+    .stDownloadButton > button:hover {
+        background-color: #2d5a8f !important;
+    }
+    </style>
+
     <style>
     /* Fondo principal blanco */
     .stApp {
