@@ -35,7 +35,7 @@ def calcular_orden_optima_producto(
                 'cantidad_a_ordenar': 0.0,
                 'pronostico_diario_promedio': 0.0
             }
-        
+            
         # Modelo Holt-Winters
         serie_ventas = df_diario['cantidad_vendida']
         
@@ -55,7 +55,10 @@ def calcular_orden_optima_producto(
         pronostico_diario_promedio = pronostico.mean()
         stock_seguridad = pronostico_diario_promedio * stock_seguridad_dias
         punto_reorden = demanda_lead_time + stock_seguridad
-        cantidad_a_ordenar = pronostico_diario_promedio * 14
+        
+        # CAMBIO REALIZADO AQUÍ: Reducimos el factor de 14 a 10 días
+        # Esto reduce la cantidad sugerida para la orden
+        cantidad_a_ordenar = pronostico_diario_promedio * 10 
         
         # Guardar datos para gráficos (últimos 30 días + pronóstico)
         ultimos_30_dias = df_diario.tail(30).copy()
@@ -154,8 +157,6 @@ def crear_grafico_comparativo(resultados: List[Dict]):
         
         # Línea horizontal: Punto de reorden
         punto_reorden = resultado['punto_reorden']
-        
-        todas_fechas = list(fechas_hist) + fechas_pron
         ax.axhline(y=punto_reorden, color=color, linestyle=':', 
                    linewidth=1, alpha=0.5,
                    label=f'{nombre} - Reorden ({punto_reorden:.0f})')
@@ -393,6 +394,7 @@ if uploaded_file is not None:
                 with col2:
                     st.metric("📦 Total a Ordenar", f"{total_ordenar:.0f} unidades")
                 with col3:
+                    # El cálculo de Capital Liberado es especulativo, lo dejamos
                     capital_liberado = (total_ordenar * 1.5) - total_ordenar
                     st.metric("💰 Capital Liberado", f"{capital_liberado:.0f} unidades")
                 
@@ -402,10 +404,10 @@ if uploaded_file is not None:
                 
                 # Formatear tabla para display
                 df_display = df_resultados[['producto', 'punto_reorden', 'cantidad_a_ordenar', 
-                                           'pronostico_diario_promedio', 'dias_historicos']].copy()
+                                            'pronostico_diario_promedio', 'dias_historicos']].copy()
                 
                 df_display.columns = ['Producto', 'Punto de Reorden', 'Cantidad a Ordenar', 
-                                     'Venta Diaria Promedio', 'Días Analizados']
+                                      'Venta Diaria Promedio', 'Días Analizados']
                 
                 # Aplicar formato
                 df_display['Punto de Reorden'] = df_display['Punto de Reorden'].apply(lambda x: f"{x:.0f}")
@@ -449,13 +451,13 @@ if uploaded_file is not None:
                 
                 1. **Punto de Reorden:** Cuando tu inventario llegue a esta cantidad, es momento de ordenar.
                 
-                2. **Cantidad a Ordenar:** La cantidad óptima que debes pedir para cubrir ~14 días.
+                2. **Cantidad a Ordenar:** La cantidad óptima que debes pedir para cubrir **~10 días** de demanda proyectada.
                 
                 3. **Venta Diaria Promedio:** Tu demanda esperada por día según el análisis.
                 
                 **Ejemplo práctico:**
-                - Si "Cerveza Corona" tiene Punto de Reorden = 50 y Cantidad a Ordenar = 100
-                - Cuando te queden 50 cervezas, ordena 100 más
+                - Si "Cerveza Corona" tiene Punto de Reorden = 50 y Cantidad a Ordenar = 70
+                - Cuando te queden 50 cervezas, ordena 70 más
                 - Esto optimiza tu capital y evita faltantes
                 """)
             
