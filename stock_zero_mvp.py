@@ -175,8 +175,20 @@ st.markdown("""
         background-color: #ffffff !important;
     }
     
-    [data-testid="stFileUploader"] * {
+    [data-testid="stFileUploader"] label,
+    [data-testid="stFileUploader"] p,
+    [data-testid="stFileUploader"] span,
+    [data-testid="stFileUploader"] small {
         color: #1a202c !important;
+    }
+    
+    [data-testid="stFileUploader"] section {
+        background-color: #f8fafc !important;
+        border-radius: 8px;
+    }
+    
+    [data-testid="stFileUploader"] section > div {
+        background-color: #f8fafc !important;
     }
     
     [data-testid="stFileUploader"] button {
