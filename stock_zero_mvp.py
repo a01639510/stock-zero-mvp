@@ -105,14 +105,21 @@ with tab_optimizacion:
             df_ventas['cantidad_vendida'] = pd.to_numeric(df_ventas['cantidad_vendida'], errors='coerce').fillna(0)
             
             # Procesar archivo de STOCK
+            df_ventas['fecha'] = pd.to_datetime(df_ventas['fecha'], errors='coerce')
+            df_ventas = df_ventas.dropna(subset=['fecha'])
+            df_ventas['fecha'] = df_ventas['fecha'].dt.normalize() # <-- CORREGIDO
+            df_ventas['cantidad_vendida'] = pd.to_numeric(df_ventas['cantidad_vendida'], errors='coerce').fillna(0)
+            
+            # Procesar archivo de STOCK
             df_stock = pd.DataFrame(columns=['fecha', 'producto', 'cantidad_recibida']) 
             if uploaded_file_stock is not None:
                 try:
                     df_raw_stock = pd.read_csv(uploaded_file_stock)
                     if 'fecha' in df_raw_stock.columns and 'producto' in df_raw_stock.columns and 'cantidad_recibida' in df_raw_stock.columns:
                         df_stock = df_raw_stock.copy()
-                        df_stock['fecha'] = pd.to_datetime(df_stock['fecha'], errors='coerce').normalize()
+                        df_stock['fecha'] = pd.to_datetime(df_stock['fecha'], errors='coerce')
                         df_stock = df_stock.dropna(subset=['fecha'])
+                        df_stock['fecha'] = df_stock['fecha'].dt.normalize() # <-- CORREGIDO
                         df_stock['cantidad_recibida'] = pd.to_numeric(df_stock['cantidad_recibida'], errors='coerce').fillna(0)
                         st.success("✅ Historial de Entradas de Stock cargado.")
                     else:
