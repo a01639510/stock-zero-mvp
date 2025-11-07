@@ -35,7 +35,7 @@ def calcular_trazabilidad_inventario(
     # Rango de fechas: Desde el inicio de los datos hasta hoy + 60 días
     fecha_actual = datetime.now().normalize()
     
-    # CORRECCIÓN DE FECHAS MÍNIMAS (Más robusta contra NaT)
+    # Manejo robusto de fechas mínimas (evita el error si hay NaT)
     min_date_ventas = ventas_prod['fecha'].min() if not ventas_prod.empty and not pd.isna(ventas_prod['fecha'].min()) else fecha_actual
     min_date_entradas = entradas_prod['fecha'].min() if not entradas_prod.empty and not pd.isna(entradas_prod['fecha'].min()) else fecha_actual
 
