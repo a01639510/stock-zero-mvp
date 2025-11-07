@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from typing import Dict, Union, List
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -54,6 +56,9 @@ def calcular_orden_optima_producto(
         punto_reorden = demanda_lead_time + stock_seguridad
         cantidad_a_ordenar = pronostico_diario_promedio * 14
         
+        # Guardar datos para gráficos (últimos 30 días + pronóstico)
+        ultimos_30_dias = df_diario.tail(30).copy()
+        
         return {
             'producto': nombre_producto,
             'punto_reorden': round(punto_reorden, 2),
@@ -61,7 +66,11 @@ def calcular_orden_optima_producto(
             'pronostico_diario_promedio': round(pronostico_diario_promedio, 2),
             'demanda_lead_time': round(demanda_lead_time, 2),
             'stock_seguridad': round(stock_seguridad, 2),
-            'dias_historicos': len(df_diario)
+            'dias_historicos': len(df_diario),
+            # Datos para gráficos
+            'datos_historicos': ultimos_30_dias,
+            'pronostico_fechas': pronostico.index.tolist(),
+            'pronostico_valores': pronostico.tolist()
         }
         
     except Exception as e:
@@ -99,6 +108,114 @@ def procesar_multiple_productos(
         resultados.append(resultado)
     
     return resultados
+
+
+def crear_grafico_comparativo(resultados: List[Dict]) -> go.Figure:
+    """
+    Crea un gráfico interactivo comparando ventas históricas y pronósticos de múltiples productos.
+    """
+    fig = go.Figure()
+    
+    # Paleta de colores
+    colores = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
+               '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+    
+    productos_exitosos = [r for r in resultados if 'error' not in r]
+    
+    for idx, resultado in enumerate(productos_exitosos):
+        color = colores[idx % len(colores)]
+        nombre = resultado['producto']
+        
+        # Datos históricos (últimos 30 días)
+        df_hist = resultado['datos_historicos']
+        fechas_hist = df_hist.index
+        ventas_hist = df_hist['cantidad_vendida'].values
+        
+        # Pronóstico
+        fechas_pron = resultado['pronostico_fechas']
+        valores_pron = resultado['pronostico_valores']
+        
+        # Línea sólida: Ventas históricas
+        fig.add_trace(go.Scatter(
+            x=fechas_hist,
+            y=ventas_hist,
+            mode='lines+markers',
+            name=f'{nombre}',
+            line=dict(color=color, width=2),
+            marker=dict(size=4),
+            legendgroup=nombre,
+            showlegend=True
+        ))
+        
+        # Línea punteada: Pronóstico
+        # Conectar último punto histórico con pronóstico
+        ultima_fecha_hist = fechas_hist[-1]
+        ultimo_valor_hist = ventas_hist[-1]
+        
+        fechas_pronostico_completo = [ultima_fecha_hist] + fechas_pron
+        valores_pronostico_completo = [ultimo_valor_hist] + valores_pron
+        
+        fig.add_trace(go.Scatter(
+            x=fechas_pronostico_completo,
+            y=valores_pronostico_completo,
+            mode='lines',
+            name=f'{nombre} (Pronóstico)',
+            line=dict(color=color, width=2, dash='dash'),
+            legendgroup=nombre,
+            showlegend=True
+        ))
+        
+        # Línea horizontal: Punto de reorden
+        punto_reorden = resultado['punto_reorden']
+        
+        # Extender línea por todo el rango
+        todas_fechas = list(fechas_hist) + fechas_pron
+        
+        fig.add_trace(go.Scatter(
+            x=[todas_fechas[0], todas_fechas[-1]],
+            y=[punto_reorden, punto_reorden],
+            mode='lines',
+            name=f'{nombre} - Punto Reorden ({punto_reorden:.0f})',
+            line=dict(color=color, width=1, dash='dot'),
+            legendgroup=nombre,
+            showlegend=True,
+            opacity=0.6
+        ))
+    
+    # Configuración del gráfico
+    fig.update_layout(
+        title={
+            'text': '📊 Ventas Históricas vs Pronóstico por Producto',
+            'x': 0.5,
+            'xanchor': 'center',
+            'font': {'size': 20}
+        },
+        xaxis_title='Fecha',
+        yaxis_title='Cantidad Vendida',
+        hovermode='x unified',
+        height=600,
+        legend=dict(
+            orientation="v",
+            yanchor="top",
+            y=1,
+            xanchor="left",
+            x=1.02,
+            font=dict(size=10)
+        ),
+        plot_bgcolor='white',
+        xaxis=dict(
+            showgrid=True,
+            gridwidth=1,
+            gridcolor='lightgray'
+        ),
+        yaxis=dict(
+            showgrid=True,
+            gridwidth=1,
+            gridcolor='lightgray'
+        )
+    )
+    
+    return fig
 
 
 # ============================================
@@ -269,6 +386,30 @@ if uploaded_file is not None:
             
             if exitosos:
                 st.success(f"✅ Se analizaron exitosamente {len(exitosos)} productos")
+                
+                # ============================================
+                # GRÁFICO COMPARATIVO
+                # ============================================
+                st.markdown("---")
+                st.markdown("### 📈 Visualización: Ventas y Pronósticos")
+                
+                try:
+                    fig = crear_grafico_comparativo(exitosos)
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    st.info("""
+                    **Cómo leer este gráfico:**
+                    - **Líneas sólidas:** Ventas reales de los últimos 30 días
+                    - **Líneas punteadas:** Pronóstico de ventas futuras (Lead Time)
+                    - **Líneas punteadas horizontales:** Punto de reorden (cuando ordenar)
+                    - Cuando la demanda proyectada se acerca al punto de reorden, es momento de hacer el pedido
+                    """)
+                except Exception as e:
+                    st.warning(f"No se pudo generar el gráfico: {str(e)}")
+                
+                # ============================================
+                # MÉTRICAS Y TABLA
+                # ============================================
                 
                 # Crear DataFrame de resultados
                 df_resultados = pd.DataFrame(exitosos)
