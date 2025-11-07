@@ -344,45 +344,53 @@ def crear_grafico_comparativo(resultados: List[Dict]):
     return fig
     
 # ============================================
-# FUNCIONES DE INVENTARIO BÁSICO (ACTUALIZADAS)
+# FUNCIONES DE INVENTARIO BÁSICO (ACTUALIZADAS Y CORREGIDAS)
 # ============================================
 
 def generar_inventario_base():
-    """Genera un DataFrame base para la sección de inventario, incluyendo productos de ventas."""
+    """
+    Genera un DataFrame base para el inventario, usando productos de ventas si están disponibles, 
+    o una lista base si no lo están.
+    """
     
-    # 1. Intentar obtener los productos únicos de las ventas cargadas
     productos_de_ventas = []
     if 'df_ventas_trazabilidad' in st.session_state:
         df_ventas = st.session_state['df_ventas_trazabilidad']
         productos_de_ventas = sorted(df_ventas['producto'].unique().tolist())
         
-    # 2. Inicializar con datos de ejemplo por defecto (si no hay ventas cargadas)
     if not productos_de_ventas:
-        productos_base = ['Café en Grano (Kg)', 'Leche Entera (Litros)', 'Vaso 12oz (Unidad)']
+        productos_base = ['Café en Grano (Kg)', 'Leche Entera (Litros)', 'Pan Hamburguesa (Uni)']
     else:
         productos_base = productos_de_ventas
 
-    # 3. Construir el DataFrame con valores por defecto
+    # Inicialización de columnas
     data = {
         'Producto': productos_base,
         'Categoría': ['Insumo'] * len(productos_base),
         'Unidad': ['UNI'] * len(productos_base),
-        'Stock Actual': [0.0] * len(productos_base),
-        'Punto de Reorden (PR)': [0.0] * len(productos_base),
-        'Costo Unitario': [1.0] * len(productos_base),
+        # Usamos valores iniciales realistas para el ejemplo si no vienen de ventas
+        'Stock Actual': [50.0] * len(productos_base),
+        'Punto de Reorden (PR)': [10.0] * len(productos_base),
+        'Costo Unitario': [5.0] * len(productos_base),
     }
     df = pd.DataFrame(data)
     
-    # Intenta aplicar unidades más lógicas si el nombre del producto lo sugiere
+    # Asignación de unidades basada en el nombre (si no están ya en ventas)
     df['Unidad'] = np.select(
         [
-            df['Producto'].str.contains(r'\(Kg\)', na=False),
-            df['Producto'].str.contains(r'\(L\)', na=False),
-            df['Producto'].str.contains(r'\(Uni\)', na=False)
+            df['Producto'].str.contains(r'\(Kg\)', na=False, case=False),
+            df['Producto'].str.contains(r'\(L\)', na=False, case=False),
+            df['Producto'].str.contains(r'\(Uni\)', na=False, case=False)
         ],
         ['KG', 'L', 'UNI'],
         default='UNI'
     )
+    
+    # Si viene de las ventas, inicializa Stock/PR en 0 para forzar la actualización
+    if productos_de_ventas:
+        df['Stock Actual'] = 0.0
+        df['Punto de Reorden (PR)'] = 0.0
+        df['Costo Unitario'] = 1.0
     
     df['Faltante?'] = df['Stock Actual'] < df['Punto de Reorden (PR)']
     df['Valor Total'] = df['Stock Actual'] * df['Costo Unitario']
@@ -392,56 +400,57 @@ def inventario_basico_app():
     """Interfaz para el control de inventario básico tipo Excel."""
     
     st.header("🛒 Control de Inventario Básico")
-    st.info("💡 Usa esta sección para gestionar el stock físico. Los productos listados aquí son usados para anclar la línea de **Trazabilidad** en la pestaña de Optimización.")
+    st.info("💡 Usa esta sección para gestionar el stock físico. **Actualiza 'Stock Actual'** aquí para que las proyecciones de stock funcionen correctamente.")
 
     # --- Lógica de inicialización/actualización de inventario ---
-    # 1. Obtener la lista de productos actualizados del archivo de ventas
-    productos_de_ventas_actuales = set()
-    if 'df_ventas_trazabilidad' in st.session_state:
-        df_ventas = st.session_state['df_ventas_trazabilidad']
-        productos_de_ventas_actuales = set(df_ventas['producto'].unique().tolist())
     
-    # 2. Obtener el inventario actual de la sesión (o una tabla base si no existe)
+    # Si 'inventario_df' NO existe, lo creamos y lo guardamos.
     if 'inventario_df' not in st.session_state:
         st.session_state['inventario_df'] = generar_inventario_base()
         
     df_inventario_actual = st.session_state['inventario_df'].copy()
-    productos_en_inventario = set(df_inventario_actual['Producto'].tolist())
     
-    # 3. Identificar nuevos productos del archivo de ventas y agregarlos
-    nuevos_productos = list(productos_de_ventas_actuales - productos_en_inventario)
+    # Lógica de Sincronización: Agrega productos nuevos de las ventas
+    productos_de_ventas_actuales = set()
+    if 'df_ventas_trazabilidad' in st.session_state:
+        df_ventas = st.session_state['df_ventas_trazabilidad']
+        productos_de_ventas_actuales = set(df_ventas['producto'].unique().tolist())
+        
+        productos_en_inventario = set(df_inventario_actual['Producto'].tolist())
+        nuevos_productos = list(productos_de_ventas_actuales - productos_en_inventario)
+        
+        if nuevos_productos:
+            # Crear un DataFrame solo para los nuevos productos
+            data_nuevos = {
+                'Producto': nuevos_productos,
+                'Categoría': ['Insumo'] * len(nuevos_productos),
+                'Unidad': ['UNI'] * len(nuevos_productos),
+                'Stock Actual': [0.0] * len(nuevos_productos),
+                'Punto de Reorden (PR)': [0.0] * len(nuevos_productos),
+                'Costo Unitario': [1.0] * len(nuevos_productos),
+                'Faltante?': [True] * len(nuevos_productos),
+                'Valor Total': [0.0] * len(nuevos_productos),
+            }
+            df_nuevos = pd.DataFrame(data_nuevos)
+            
+            # Sincronizar las unidades de los nuevos productos
+            df_nuevos['Unidad'] = np.select(
+                [
+                    df_nuevos['Producto'].str.contains(r'\(Kg\)', na=False, case=False),
+                    df_nuevos['Producto'].str.contains(r'\(L\)', na=False, case=False),
+                    df_nuevos['Producto'].str.contains(r'\(Uni\)', na=False, case=False)
+                ],
+                ['KG', 'L', 'UNI'],
+                default='UNI'
+            )
+            
+            # Concatenar y actualizar el estado de sesión
+            df_inventario_actual = pd.concat([df_inventario_actual, df_nuevos], ignore_index=True)
+            st.session_state['inventario_df'] = df_inventario_actual
+            st.info(f"✨ Se han agregado **{len(nuevos_productos)}** productos nuevos de tu archivo de ventas a esta tabla. ¡Establece su Stock Actual y PR!")
     
-    if nuevos_productos:
-        # 4. Crear un DataFrame solo para los nuevos productos
-        data_nuevos = {
-            'Producto': nuevos_productos,
-            'Categoría': ['Insumo'] * len(nuevos_productos),
-            'Unidad': ['UNI'] * len(nuevos_productos),
-            'Stock Actual': [0.0] * len(nuevos_productos),
-            'Punto de Reorden (PR)': [0.0] * len(nuevos_productos),
-            'Costo Unitario': [1.0] * len(nuevos_productos),
-            'Faltante?': [True] * len(nuevos_productos),
-            'Valor Total': [0.0] * len(nuevos_productos),
-        }
-        df_nuevos = pd.DataFrame(data_nuevos)
-        
-        # Intentar aplicar las unidades más lógicas
-        df_nuevos['Unidad'] = np.select(
-            [
-                df_nuevos['Producto'].str.contains(r'\(Kg\)', na=False),
-                df_nuevos['Producto'].str.contains(r'\(L\)', na=False),
-                df_nuevos['Producto'].str.contains(r'\(Uni\)', na=False)
-            ],
-            ['KG', 'L', 'UNI'],
-            default='UNI'
-        )
-        
-        # 5. Concatenar y actualizar el estado de sesión
-        df_inventario_actual = pd.concat([df_inventario_actual, df_nuevos], ignore_index=True)
-        st.session_state['inventario_df'] = df_inventario_actual
-        st.info(f"✨ Se han agregado **{len(nuevos_productos)}** productos nuevos de tu archivo de ventas a esta tabla. ¡Establece su Stock Actual y PR!")
-
     df_inventario = st.session_state['inventario_df'].copy()
+
 
     # --- Edición del DataFrame ---
     st.subheader("1️⃣ Inventario Actual (Edición en Vivo)")
@@ -456,7 +465,6 @@ def inventario_basico_app():
         "Valor Total": st.column_config.NumberColumn("Valor Total", disabled=True, format="$%.2f"),
     }
     
-    # Convertir a solo las columnas editables para el data_editor
     df_editable_subset = df_inventario[editable_columns]
     
     edited_df = st.data_editor(
@@ -467,26 +475,16 @@ def inventario_basico_app():
         key="data_editor_inventario"
     )
 
-    # Re-calcular columnas derivadas y guardar en sesión
-# ... (código anterior)
-
-    # Re-calcular columnas derivadas y guardar en sesión
+    # Re-calcular columnas derivadas (Solución al error de fillna y regresión)
     if not edited_df.empty:
         try:
-            # CORRECCIÓN: Usar .loc para asegurar que estamos tratando con el DataFrame/Series
-            
-            # 1. Copia y conversión a numérico (se asegura que son Series de pandas)
             df_final = edited_df.copy()
-            df_final.loc[:, 'Stock Actual'] = pd.to_numeric(df_final['Stock Actual'], errors='coerce')
-            df_final.loc[:, 'Punto de Reorden (PR)'] = pd.to_numeric(df_final['Punto de Reorden (PR)'], errors='coerce')
-            df_final.loc[:, 'Costo Unitario'] = pd.to_numeric(df_final['Costo Unitario'], errors='coerce')
-
-            # 2. Aplicar fillna SÓLO después de la conversión exitosa
-            df_final.loc[:, 'Stock Actual'] = df_final['Stock Actual'].fillna(0)
-            df_final.loc[:, 'Punto de Reorden (PR)'] = df_final['Punto de Reorden (PR)'].fillna(0)
-            df_final.loc[:, 'Costo Unitario'] = df_final['Costo Unitario'].fillna(0)
-
-            # 3. Recalcular columnas derivadas
+            
+            # Convertir a numérico y manejar NaN en dos pasos, asegurando que son Series
+            for col in ['Stock Actual', 'Punto de Reorden (PR)', 'Costo Unitario']:
+                df_final.loc[:, col] = pd.to_numeric(df_final[col], errors='coerce').fillna(0)
+            
+            # Recalcular columnas derivadas
             df_final.loc[:, 'Faltante?'] = df_final['Stock Actual'] < df_final['Punto de Reorden (PR)']
             df_final.loc[:, 'Valor Total'] = df_final['Stock Actual'] * df_final['Costo Unitario']
             
@@ -494,12 +492,10 @@ def inventario_basico_app():
             st.session_state['inventario_df'] = df_final
             
         except Exception as e:
-            # st.error(f"Error en el cálculo: {e}. Revisa los formatos de números.") # Quitar esta línea si no es necesario ver el error
-            st.error(f"Error en el cálculo de inventario. Por favor, asegúrate de que todas las columnas numéricas contengan solo números o déjalas vacías. Detalle: {e}") 
-            # Mantener el df_actual anterior si falla el cálculo
-            
+            st.error(f"Error en el cálculo de inventario. Por favor, asegúrate de que las columnas numéricas ('Stock Actual', 'Punto de Reorden', 'Costo') contengan solo números. Detalle: {e}")
+
     df_actual = st.session_state['inventario_df']
-# ... (código posterior)
+
     # --- Alertas y Totales ---
     st.subheader("2️⃣ Alertas y Totales")
 
@@ -742,7 +738,7 @@ with tab_optimizacion:
                                 stock_actual = pd.to_numeric(stock_row['Stock Actual'].iloc[0], errors='coerce').fillna(0)
                                 
                                 if stock_actual == 0:
-                                    mensaje_stock = f"⚠️ **{producto_seleccionado_inv}** encontrado, pero su **Stock Actual es 0**. La simulación de stock será incompleta. Ve a la pestaña de Control de Inventario Básico para actualizarlo."
+                                    mensaje_stock = f"⚠️ **{producto_seleccionado_inv}** encontrado, pero su **Stock Actual es 0**. La simulación de stock será incompleta. **¡Actualiza el Stock Actual en la pestaña de Control de Inventario Básico!**"
                                 else:
                                     mensaje_stock = f"Stock actual: **{stock_actual:.2f}** (tomado de Control de Inventario Básico)."
                             else:
@@ -773,9 +769,7 @@ with tab_optimizacion:
                             
                             st.info(f"""
                             **Análisis de Trazabilidad (Stock Actual: {stock_actual:.0f} unidades):**
-                            - **Línea Azul (Stock Real):** Muestra cómo se comportó el inventario históricamente (requiere archivo de Entradas de Stock).
                             - **Línea Naranja Punteada (Proyectado):** Simula la caída del stock futuro usando el Pronóstico Diario.
-                            - **Línea Roja (PR):** Tu punto crítico. Si la línea de Stock la cruza, estás en riesgo de quiebre.
                             """)
                         else:
                             st.error(f"❌ No hay datos de ventas o stock disponibles para {producto_seleccionado_inv} para generar la trazabilidad.")
