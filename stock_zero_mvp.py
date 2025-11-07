@@ -161,7 +161,6 @@ def procesar_multiple_productos(
 # ============================================
 # FUNCIONES DE TRAZABILIDAD Y GRÁFICOS (NUEVOS)
 # ============================================
-
 def calcular_trazabilidad_inventario(
     df_ventas: pd.DataFrame, 
     df_entradas: pd.DataFrame, 
@@ -172,87 +171,94 @@ def calcular_trazabilidad_inventario(
 ):
     """
     Calcula la trazabilidad histórica del stock y la proyecta al futuro.
-    """
     
+    CORRECCIÓN: Se asegura que todas las comparaciones de fechas usen 
+    el tipo datetime.date de Python para evitar errores de atributos.
+    """
+    import numpy as np # Asegurar que numpy esté disponible en el alcance de la función
+    from datetime import datetime, timedelta
+
     # 1. PREPARACIÓN DE DATOS DIARIOS
     
-    # Filtrar ventas y entradas por producto
     ventas_prod = df_ventas[df_ventas['producto'] == nombre_producto][['fecha', 'cantidad_vendida']]
     entradas_prod = df_entradas[df_entradas['producto'] == nombre_producto][['fecha', 'cantidad_recibida']]
 
-    # Si no hay datos, retorna None
     if ventas_prod.empty and entradas_prod.empty:
         return None
 
-    # Encontrar rango de fechas
-    min_date = min(ventas_prod['fecha'].min(), entradas_prod['fecha'].min() if not entradas_prod.empty else datetime.now()).date()
-    max_date_hist = max(ventas_prod['fecha'].max(), entradas_prod['fecha'].max() if not entradas_prod.empty else min_date).date()
-
-    # Días totales a proyectar (Hasta el fin del Lead Time + 10 días de buffer)
-    dias_proyeccion = (datetime.now().date() - min_date).days + lead_time + 10
+    # Encontrar rango de fechas de manera segura
+    min_date_ventas = ventas_prod['fecha'].min().date() if not ventas_prod.empty else datetime.now().date()
+    min_date_entradas = entradas_prod['fecha'].min().date() if not entradas_prod.empty else datetime.now().date()
+    min_date = min(min_date_ventas, min_date_entradas)
+    
+    fecha_actual = datetime.now().date()
+    
+    dias_proyeccion = (fecha_actual - min_date).days + lead_time + 10
     fechas = pd.date_range(start=min_date, periods=dias_proyeccion, name='Fecha')
     
     df_diario = pd.DataFrame(index=fechas)
     df_diario['Ventas'] = 0.0
     df_diario['Entradas'] = 0.0
     
-    # Mapear ventas y entradas a la serie diaria
+    # Mapear ventas y entradas a la serie diaria (uso de .intersection para evitar warnings)
     if not ventas_prod.empty:
         ventas_diarias = ventas_prod.set_index('fecha').resample('D').sum()['cantidad_vendida'].fillna(0)
-        df_diario.loc[ventas_diarias.index, 'Ventas'] = ventas_diarias
+        df_diario.loc[df_diario.index.intersection(ventas_diarias.index), 'Ventas'] = ventas_diarias
         
     if not entradas_prod.empty:
         entradas_diarias = entradas_prod.set_index('fecha').resample('D').sum()['cantidad_recibida'].fillna(0)
-        df_diario.loc[entradas_diarias.index, 'Entradas'] = entradas_diarias
+        df_diario.loc[df_diario.index.intersection(entradas_diarias.index), 'Entradas'] = entradas_diarias
 
     # 2. CÁLCULO DEL INVENTARIO HISTÓRICO
     
     df_diario['Stock'] = 0.0
-    
-    # Usar el Stock Actual Manual para inicializar el stock el día de hoy
-    # El stock histórico se calculará hacia atrás.
-    fecha_actual = datetime.now().date()
-    
-    # Llenar el stock histórico:
     stock_t = stock_actual_manual
     
-    # Iterar hacia atrás desde la fecha actual hasta la fecha mínima
-    for date in reversed(df_diario.index):
-        if date.date() > fecha_actual:
-            # Si es futuro, el stock se proyectará más tarde
+    # Iterar hacia atrás:
+    for date_ts in reversed(df_diario.index):
+        date = date_ts.date() # Convertir Timestamp a date para comparación
+        
+        if date > fecha_actual:
             continue 
         
-        df_diario.loc[date, 'Stock'] = stock_t
+        df_diario.loc[date_ts, 'Stock'] = stock_t
         
-        # Calcular el stock del día anterior:
-        # Stock_t-1 = Stock_t + Ventas_t - Entradas_t
-        ventas_t = df_diario.loc[date, 'Ventas']
-        entradas_t = df_diario.loc[date, 'Entradas']
+        ventas_t = df_diario.loc[date_ts, 'Ventas']
+        entradas_t = df_diario.loc[date_ts, 'Entradas']
         
         stock_t = stock_t + ventas_t - entradas_t
-        stock_t = max(0, stock_t) # El stock histórico no puede ser negativo
+        stock_t = max(0, stock_t)
         
     # 3. PROYECCIÓN DEL INVENTARIO FUTURO
     
-    # El stock del día de hoy es el stock actual manual
-    df_diario.loc[fecha_actual, 'Stock'] = stock_actual_manual
+    # Asegurar el stock del día de hoy
+    try:
+        df_diario.loc[fecha_actual.strftime("%Y-%m-%d"), 'Stock'] = stock_actual_manual
+    except KeyError:
+         pass 
 
-    # Proyectar desde la fecha actual + 1 día
-    for date in df_diario.index:
-        if date.date() > fecha_actual:
+    # Proyectar hacia adelante:
+    for i, date_ts in enumerate(df_diario.index):
+        date = date_ts.date()
+        
+        if date > fecha_actual:
             
-            # Stock_t = Stock_t-1 - Pronóstico_Diario
-            stock_anterior = df_diario.loc[df_diario.index[df_diario.index.get_loc(date) - 1], 'Stock']
+            # Obtener el índice anterior
+            idx_anterior = df_diario.index[i - 1]
+            stock_anterior = df_diario.loc[idx_anterior, 'Stock']
             stock_proyectado = stock_anterior - pronostico_diario_promedio
             
-            df_diario.loc[date, 'Stock'] = max(0, stock_proyectado)
+            df_diario.loc[date_ts, 'Stock'] = max(0, stock_proyectado)
             
-    # Marcar la división entre histórico y futuro
-    df_diario['Tipo'] = np.where(df_diario.index.date <= fecha_actual, 'Histórico', 'Proyectado')
+    # 4. MARCAR LA DIVISIÓN (LA CORRECCIÓN CLAVE PARA EL ERROR DE ATRIBUTO)
+    
+    # 🏆 CONVERTIMOS EXPLICITAMENTE EL ÍNDICE A OBJETOS DE FECHA DE PYTHON
+    fechas_indice = np.array([d.date() for d in df_diario.index])
+    
+    # Usamos np.where para la comparación segura.
+    df_diario['Tipo'] = np.where(fechas_indice <= fecha_actual, 'Histórico', 'Proyectado')
     
     return df_diario.reset_index()
-
-
 def crear_grafico_trazabilidad_total(
     df_trazabilidad: pd.DataFrame, 
     resultado: Dict, 
