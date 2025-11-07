@@ -22,7 +22,6 @@ def calcular_trazabilidad_inventario(
     
     # --- 1. PREPARACIÓN DE DATOS DIARIOS ---
     
-    # Filtrar y copiar para evitar warnings
     ventas_prod = df_ventas[df_ventas['producto'] == nombre_producto][['fecha', 'cantidad_vendida']].copy()
     entradas_prod = df_entradas[df_entradas['producto'] == nombre_producto][['fecha', 'cantidad_recibida']].copy()
     
@@ -33,20 +32,20 @@ def calcular_trazabilidad_inventario(
     ventas_prod['cantidad_vendida'] = pd.to_numeric(ventas_prod['cantidad_vendida'], errors='coerce').fillna(0)
     entradas_prod['cantidad_recibida'] = pd.to_numeric(entradas_prod['cantidad_recibida'], errors='coerce').fillna(0)
     
-    # Definir el rango de fechas: Desde el inicio de los datos hasta hoy + 60 días de proyección
-    fecha_actual = datetime.now().normalize() # Usamos la fecha de hoy
+    # Rango de fechas: Desde el inicio de los datos hasta hoy + 60 días
+    fecha_actual = datetime.now().normalize()
     min_date_ventas = ventas_prod['fecha'].min().normalize() if not ventas_prod.empty else fecha_actual
     min_date_entradas = entradas_prod['fecha'].min().normalize() if not entradas_prod.empty else fecha_actual
     min_date = min(min_date_ventas, min_date_entradas)
     
-    dias_proyeccion = 60 # Proyectamos 60 días hacia adelante
+    dias_proyeccion = 60
     fechas = pd.date_range(start=min_date, end=fecha_actual + timedelta(days=dias_proyeccion), name='Fecha')
     
     df_diario = pd.DataFrame(index=fechas)
     df_diario['Ventas'] = 0.0
     df_diario['Entradas'] = 0.0
     
-    # Mapear ventas y entradas históricas (CORRECCIÓN: forzar a pd.Series antes de fillna)
+    # Mapear ventas y entradas históricas
     if not ventas_prod.empty:
         ventas_diarias = ventas_prod.set_index('fecha').resample('D').sum()['cantidad_vendida']
         ventas_diarias = pd.Series(ventas_diarias).fillna(0)
@@ -62,21 +61,11 @@ def calcular_trazabilidad_inventario(
     df_diario['Stock'] = 0.0
     df_diario['Simulacion_Entradas'] = 0.0
     
-    # Etiquetar Histórico vs. Proyectado
     df_diario['Tipo'] = np.where(df_diario.index.date <= fecha_actual.date(), 'Histórico', 'Proyectado')
     
-    # Inicializar el stock en el día de hoy o el primer día del DF
-    # Usamos el stock_actual_manual como punto de anclaje para la simulación
-    try:
-        # Buscamos el índice más cercano o igual a la fecha actual para iniciar
-        idx_inicio = df_diario.index.get_loc(fecha_actual, method='pad')
-    except:
-        idx_inicio = 0 # Si falla, usa el primer índice
-
-    # Inicializar el Stock del día anterior a la simulación con el stock_actual_manual
     stock_t = stock_actual_manual
     
-    # Iterar día a día desde el inicio de los datos hasta el final de la proyección
+    # Iterar día a día
     for i, date_ts in enumerate(df_diario.index):
         if i == 0:
             df_diario.loc[date_ts, 'Stock'] = stock_t
@@ -95,7 +84,7 @@ def calcular_trazabilidad_inventario(
         
         simulacion_entrada_t = 0.0
         
-        # 3. Simular Orden de Compra (Se activa en la proyección, se recibe Lead Time después)
+        # 3. Simular Orden de Compra (Solo en la proyección)
         if not is_historico:
             # Comprobamos el PR ANTES de consumir la demanda del día
             if stock_t <= punto_reorden:
