@@ -30,13 +30,17 @@ def calcular_orden_optima_producto(
         df_diario = df.resample('D').sum()
         df_diario['cantidad_vendida'] = df_diario['cantidad_vendida'].fillna(0)
         
+        # Volumen Total Vendido (Necesario para ABC)
+        volumen_total_vendido = df_diario['cantidad_vendida'].sum()
+        
         if len(df_diario) < frecuencia_estacional * 2:
             return {
                 'producto': nombre_producto,
                 'error': f'Datos insuficientes (mínimo {frecuencia_estacional * 2} días)',
                 'punto_reorden': 0.0,
                 'cantidad_a_ordenar': 0.0,
-                'pronostico_diario_promedio': 0.0
+                'pronostico_diario_promedio': 0.0,
+                'volumen_total_vendido': volumen_total_vendido
             }
             
         # Modelo Holt-Winters
@@ -74,6 +78,7 @@ def calcular_orden_optima_producto(
             'demanda_lead_time': round(demanda_lead_time, 2),
             'stock_seguridad': round(stock_seguridad, 2),
             'dias_historicos': len(df_diario),
+            'volumen_total_vendido': volumen_total_vendido, # Incluido para ABC
             # Datos para gráficos
             'datos_historicos': ultimos_30_dias,
             'pronostico_fechas': pronostico.index.tolist(),
@@ -86,7 +91,8 @@ def calcular_orden_optima_producto(
             'error': f'Error: {str(e)}',
             'punto_reorden': 0.0,
             'cantidad_a_ordenar': 0.0,
-            'pronostico_diario_promedio': 0.0
+            'pronostico_diario_promedio': 0.0,
+            'volumen_total_vendido': 0.0
         }
 
 
@@ -97,7 +103,7 @@ def procesar_multiple_productos(
     frecuencia_estacional: int = 7
 ) -> List[Dict]:
     """
-    Procesa múltiples productos desde un CSV en formato largo.
+    Procesa múltiples productos y realiza la clasificación ABC.
     """
     resultados = []
     productos = df['producto'].unique()
@@ -113,13 +119,52 @@ def procesar_multiple_productos(
             frecuencia_estacional
         )
         resultados.append(resultado)
+        
+    # Clasificación ABC
+    df_resultados = pd.DataFrame(resultados)
     
-    return resultados
+    # Solo clasificar productos sin errores que tienen ventas
+    df_abc = df_resultados[(df_resultados['error'].isnull()) & (df_resultados['volumen_total_vendido'] > 0)].copy()
+    
+    if not df_abc.empty:
+        # 1. Ordenar por volumen total de venta (valor/volumen estratégico)
+        df_abc = df_abc.sort_values('volumen_total_vendido', ascending=False)
+        
+        # 2. Calcular porcentaje y porcentaje acumulado
+        total_volumen = df_abc['volumen_total_vendido'].sum()
+        df_abc['volumen_pct'] = (df_abc['volumen_total_vendido'] / total_volumen) * 100
+        df_abc['volumen_acum_pct'] = df_abc['volumen_pct'].cumsum()
+        
+        # 3. Asignar categoría A, B, C (Regla 80/15/5)
+        df_abc['clasificacion_abc'] = np.select(
+            [
+                df_abc['volumen_acum_pct'] <= 80,  # 80% del valor/volumen total
+                df_abc['volumen_acum_pct'] <= 95   # 80% + 15% = 95%
+            ],
+            [
+                'A',
+                'B'
+            ],
+            default='C'
+        )
+        
+        # Fusionar de vuelta la clasificación ABC al DataFrame original
+        df_resultados = df_resultados.merge(
+            df_abc[['producto', 'clasificacion_abc']], 
+            on='producto', 
+            how='left'
+        )
+        df_resultados['clasificacion_abc'] = df_resultados['clasificacion_abc'].fillna('N/A')
+    else:
+        df_resultados['clasificacion_abc'] = 'N/A'
+    
+    return df_resultados.to_dict('records')
 
 
 def crear_grafico_comparativo(resultados: List[Dict]):
     """
     Crea un gráfico comparando ventas históricas y pronósticos de múltiples productos.
+    (El Punto de Reorden se omite para evitar distorsión del eje Y).
     """
     productos_exitosos = [r for r in resultados if 'error' not in r]
     
@@ -143,8 +188,8 @@ def crear_grafico_comparativo(resultados: List[Dict]):
                 color=color, linewidth=2, marker='o', markersize=3,
                 label=f'{nombre}', alpha=0.8)
         
-        ultima_fecha_hist = fechas_hist[-1]
-        ultimo_valor_hist = ventas_hist[-1]
+        ultima_fecha_hist = fechas_hist.max()
+        ultimo_valor_hist = df_hist.loc[ultima_fecha_hist, 'cantidad_vendida']
         
         fechas_pronostico_completo = [ultima_fecha_hist] + fechas_pron
         valores_pronostico_completo = [ultimo_valor_hist] + valores_pron
@@ -155,7 +200,7 @@ def crear_grafico_comparativo(resultados: List[Dict]):
     
     ax.set_xlabel('Fecha', fontsize=12, fontweight='bold')
     ax.set_ylabel('Cantidad Vendida', fontsize=12, fontweight='bold')
-    ax.set_title('📊 Ventas Históricas vs Pronóstico por Producto', 
+    ax.set_title('📊 Ventas Históricas vs Pronóstico (Últimos 30 días)', 
                  fontsize=16, fontweight='bold', pad=20)
     
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
@@ -170,6 +215,72 @@ def crear_grafico_comparativo(resultados: List[Dict]):
     plt.tight_layout()
     
     return fig
+
+
+def crear_grafico_individual(resultado: Dict):
+    """
+    Crea un gráfico detallado para un solo producto, incluyendo el PR y OA.
+    """
+    nombre = resultado['producto']
+    punto_reorden = resultado['punto_reorden']
+    cantidad_a_ordenar = resultado['cantidad_a_ordenar']
+    
+    df_hist = resultado['datos_historicos']
+    fechas_hist = df_hist.index
+    ventas_hist = df_hist['cantidad_vendida'].values
+    
+    fechas_pron = resultado['pronostico_fechas']
+    valores_pron = resultado['pronostico_valores']
+    
+    fig, ax = plt.subplots(figsize=(12, 6))
+    
+    # 1. Ventas Históricas
+    ax.plot(fechas_hist, ventas_hist, 
+            color='#1f77b4', linewidth=2, marker='o', markersize=4,
+            label='Ventas Históricas')
+    
+    # 2. Pronóstico
+    ultima_fecha_hist = fechas_hist.max()
+    ultimo_valor_hist = df_hist.loc[ultima_fecha_hist, 'cantidad_vendida']
+    
+    fechas_pronostico_completo = [ultima_fecha_hist] + fechas_pron
+    valores_pronostico_completo = [ultimo_valor_hist] + valores_pron
+    
+    ax.plot(fechas_pronostico_completo, valores_pronostico_completo,
+            color='#ff7f0e', linewidth=2, linestyle='--', 
+            label='Pronóstico (Lead Time)')
+    
+    # 3. Línea del Punto de Reorden (PR)
+    ax.axhline(y=punto_reorden, color='red', linestyle='-', 
+               linewidth=1.5, alpha=0.8,
+               label=f'Punto de Reorden ({punto_reorden:.0f})')
+               
+    # 4. Línea del Stock Máximo (PR + OA)
+    stock_maximo = punto_reorden + cantidad_a_ordenar
+    ax.axhline(y=stock_maximo, color='green', linestyle=':', 
+               linewidth=1.5, alpha=0.6,
+               label=f'Stock Máximo ({stock_maximo:.0f})')
+               
+    # Rellenar zona de Stock de Seguridad
+    ax.axhspan(0, punto_reorden, facecolor='red', alpha=0.05, label='Zona de Reorden')
+    
+    # Configuración del gráfico
+    ax.set_xlabel('Fecha', fontsize=12)
+    ax.set_ylabel('Cantidad de Inventario', fontsize=12)
+    ax.set_title(f'Estrategia de Inventario (PR y OA) para {nombre}', 
+                 fontsize=14, fontweight='bold', pad=15)
+    
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+    ax.xaxis.set_major_locator(mdates.DayLocator(interval=5))
+    plt.xticks(rotation=45, ha='right')
+    
+    ax.grid(True, alpha=0.3, linestyle='--')
+    ax.legend(loc='upper right', fontsize=9, framealpha=0.9)
+    
+    plt.tight_layout()
+    
+    return fig
+
 
 # ============================================
 # FUNCIONES DE INVENTARIO BÁSICO
@@ -187,7 +298,6 @@ def generar_inventario_base():
     }
     df = pd.DataFrame(data)
     
-    # Cálculos dinámicos
     df['Faltante?'] = df['Stock Actual'] < df['Punto de Reorden (PR)']
     df['Valor Total'] = df['Stock Actual'] * df['Costo Unitario']
     return df
@@ -198,7 +308,6 @@ def inventario_basico_app():
     st.header("🛒 Control de Inventario Básico")
     st.info("💡 Usa esta sección para gestionar el stock físico. Las alertas se activan si el 'Stock Actual' cae por debajo del 'Punto de Reorden'.")
 
-    # Inicializar o cargar el DataFrame en el estado de la sesión
     if 'inventario_df' not in st.session_state:
         st.session_state['inventario_df'] = generar_inventario_base()
 
@@ -207,21 +316,21 @@ def inventario_basico_app():
     # --- Edición del DataFrame ---
     st.subheader("1️⃣ Inventario Actual (Edición en Vivo)")
     
-    # Columnas para la edición
     editable_columns = ['Producto', 'Categoría', 'Unidad', 'Stock Actual', 'Punto de Reorden (PR)', 'Costo Unitario']
     column_config = {
         "Producto": st.column_config.TextColumn("Producto", required=True),
         "Stock Actual": st.column_config.NumberColumn("Stock Actual", required=True, format="%.2f"),
         "Punto de Reorden (PR)": st.column_config.NumberColumn("Punto de Reorden (PR)", required=True, format="%.2f"),
         "Costo Unitario": st.column_config.NumberColumn("Costo Unitario", format="$%.2f"),
-        # 'Faltante?' y 'Valor Total' se calculan
         "Faltante?": st.column_config.CheckboxColumn("Faltante?", disabled=True),
         "Valor Total": st.column_config.NumberColumn("Valor Total", disabled=True, format="$%.2f"),
     }
     
-    # Widget de edición de datos
+    # Convertir a solo las columnas editables para el data_editor y manejar las demás después
+    df_editable_subset = df_inventario[editable_columns]
+    
     edited_df = st.data_editor(
-        df_inventario[editable_columns],
+        df_editable_subset,
         column_config=column_config,
         num_rows="dynamic",
         use_container_width=True,
@@ -231,6 +340,7 @@ def inventario_basico_app():
     # Re-calcular columnas derivadas
     if not edited_df.empty:
         try:
+            # Asegurar que las columnas son numéricas antes del cálculo
             edited_df['Stock Actual'] = pd.to_numeric(edited_df['Stock Actual'], errors='coerce').fillna(0)
             edited_df['Punto de Reorden (PR)'] = pd.to_numeric(edited_df['Punto de Reorden (PR)'], errors='coerce').fillna(0)
             edited_df['Costo Unitario'] = pd.to_numeric(edited_df['Costo Unitario'], errors='coerce').fillna(0)
@@ -356,44 +466,30 @@ with tab_optimizacion:
     # Procesar archivo
     if uploaded_file is not None:
         try:
-            # Leer CSV
             df_raw = pd.read_csv(uploaded_file)
             
             formato_detectado = None
-            
             if 'producto' in df_raw.columns and 'cantidad_vendida' in df_raw.columns:
                 formato_detectado = "largo"
                 df = df_raw.copy()
             elif 'fecha' in df_raw.columns and len(df_raw.columns) > 2:
                 formato_detectado = "ancho"
-                df = df_raw.melt(
-                    id_vars=['fecha'],
-                    var_name='producto',
-                    value_name='cantidad_vendida'
-                )
+                df = df_raw.melt(id_vars=['fecha'], var_name='producto', value_name='cantidad_vendida')
             else:
                 st.error("❌ Formato no reconocido.")
                 st.stop()
             
-            # Validar y limpiar datos
             df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
             df = df.dropna(subset=['fecha'])
             df['cantidad_vendida'] = pd.to_numeric(df['cantidad_vendida'], errors='coerce').fillna(0)
             
-            # Mostrar información del archivo
             st.markdown("### 2️⃣ Datos cargados correctamente")
             
             col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("📁 Formato detectado", formato_detectado.upper())
-            with col2:
-                num_productos = df['producto'].nunique()
-                st.metric("📦 Productos únicos", num_productos)
-            with col3:
-                st.metric("📅 Total registros", len(df))
-            with col4:
-                dias_datos = (df['fecha'].max() - df['fecha'].min()).days + 1
-                st.metric("📊 Días de datos", dias_datos)
+            with col1: st.metric("📁 Formato detectado", formato_detectado.upper())
+            with col2: st.metric("📦 Productos únicos", df['producto'].nunique())
+            with col3: st.metric("📅 Total registros", len(df))
+            with col4: st.metric("📊 Días de datos", (df['fecha'].max() - df['fecha'].min()).days + 1)
             
             with st.expander("👁️ Ver datos cargados"):
                 st.dataframe(df.head(20), use_container_width=True)
@@ -401,7 +497,6 @@ with tab_optimizacion:
             productos = sorted(df['producto'].unique())
             st.markdown(f"**Productos encontrados:** {', '.join(productos)}")
             
-            # Botón de cálculo
             st.markdown("### 3️⃣ Calcular Inventario Óptimo")
             
             if st.button("🚀 Calcular para TODOS los productos", type="primary", use_container_width=True):
@@ -413,60 +508,85 @@ with tab_optimizacion:
                         frecuencia
                     )
                 
-                # Mostrar resultados
+                # Convertir lista de diccionarios a DataFrame para manejo más fácil
+                df_resultados = pd.DataFrame(resultados)
+                df_exitosos = df_resultados[df_resultados['error'].isnull()].sort_values('cantidad_a_ordenar', ascending=False)
+                
                 st.markdown("---")
                 st.markdown("## 📊 Resultados del Análisis")
                 
-                exitosos = [r for r in resultados if 'error' not in r]
-                
-                if exitosos:
-                    st.success(f"✅ Se analizaron exitosamente {len(exitosos)} productos")
-                    
-                    # Gráfico
-                    st.markdown("---")
-                    st.markdown("### 📈 Visualización: Ventas y Pronósticos")
-                    fig = crear_grafico_comparativo(exitosos)
-                    st.pyplot(fig)
-                    st.info("El gráfico muestra el pronóstico (línea punteada) basado en el Lead Time.")
+                if not df_exitosos.empty:
+                    st.success(f"✅ Se analizaron exitosamente {len(df_exitosos)} productos")
                     
                     # Métricas
-                    df_resultados = pd.DataFrame(exitosos).sort_values('cantidad_a_ordenar', ascending=False)
-                    total_reorden = df_resultados['punto_reorden'].sum()
-                    total_ordenar = df_resultados['cantidad_a_ordenar'].sum()
+                    total_reorden = df_exitosos['punto_reorden'].sum()
+                    total_ordenar = df_exitosos['cantidad_a_ordenar'].sum()
                     cobertura_orden = frecuencia / 2
                     
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.metric("🎯 Total Punto de Reorden", f"{total_reorden:.0f} unidades")
-                    with col2:
-                        st.metric("📦 Total a Ordenar", f"{total_ordenar:.0f} unidades")
+                    col1, col2, col3 = st.columns(3)
+                    with col1: st.metric("🎯 Total Punto de Reorden", f"{total_reorden:.0f} unidades")
+                    with col2: st.metric("📦 Total a Ordenar", f"{total_ordenar:.0f} unidades")
+                    with col3: st.metric("💡 Cobertura de la Orden", f"{cobertura_orden} días")
                     
-                    # Tabla y Top 5 (Omitido por espacio, pero funciona)
-                    st.markdown("### 📋 Recomendaciones por Producto")
-                    df_display = df_resultados[['producto', 'punto_reorden', 'cantidad_a_ordenar', 
+                    # Tabla con ABC
+                    st.markdown("### 📋 Recomendaciones y Clasificación ABC")
+                    
+                    df_display = df_exitosos[['producto', 'clasificacion_abc', 'punto_reorden', 'cantidad_a_ordenar', 
                                                 'pronostico_diario_promedio']].copy()
-                    df_display.columns = ['Producto', 'Punto de Reorden', 'Cantidad a Ordenar', 'Venta Diaria Promedio']
                     
-                    # Top 5
-                    st.markdown("### 🔝 Top 5 Productos Prioritarios")
-                    for idx, row in df_resultados.head(5).iterrows():
-                        col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
-                        with col1: st.markdown(f"**{row['producto']}**")
-                        with col2: st.metric("Reorden", f"{row['punto_reorden']:.0f}")
-                        with col3: st.metric("A Ordenar", f"{row['cantidad_a_ordenar']:.0f}")
-                        with col4: st.metric("Diario", f"{row['pronostico_diario_promedio']:.1f}")
+                    df_display.columns = ['Producto', 'ABC', 'Punto de Reorden', 'Cantidad a Ordenar', 'Venta Diaria Promedio']
+                    df_display['Punto de Reorden'] = df_display['Punto de Reorden'].apply(lambda x: f"{x:.0f}")
+                    df_display['Cantidad a Ordenar'] = df_display['Cantidad a Ordenar'].apply(lambda x: f"{x:.0f}")
+                    df_display['Venta Diaria Promedio'] = df_display['Venta Diaria Promedio'].apply(lambda x: f"{x:.1f}")
                     
-                    # Interpretación
-                    st.markdown("---")
-                    st.markdown("### 💡 ¿Cómo usar estos resultados?")
-                    st.markdown(f"""
-                    **1. Punto de Reorden:** Cuando tu inventario llegue a esta cantidad, ordena.
-                    **2. Cantidad a Ordenar:** Cubre aproximadamente **{cobertura_orden} días** de demanda.
+                    st.dataframe(df_display, use_container_width=True, hide_index=True)
+                    
+                    st.info("""
+                    **Clasificación ABC:**
+                    - **A:** Productos de alta importancia/valor (80% del volumen total). Requieren seguimiento estricto.
+                    - **B:** Productos de importancia media (15% siguiente del volumen total).
+                    - **C:** Productos de baja importancia/valor (último 5% del volumen total). Gestión más sencilla.
                     """)
-        
+                    
+                    # ============================================
+                    # GRÁFICOS INDIVIDUALES Y ESTRATEGIA VISUAL
+                    # ============================================
+                    st.markdown("---")
+                    st.markdown("### 📈 Visualización Detallada y Estrategia de Inventario")
+                    
+                    # Selector de producto
+                    producto_seleccionado = st.selectbox(
+                        "Selecciona un producto para ver su estrategia de inventario (PR/OA):",
+                        options=df_exitosos['producto'].tolist()
+                    )
+                    
+                    if producto_seleccionado:
+                        resultado_prod = df_exitosos[df_exitosos['producto'] == producto_seleccionado].iloc[0].to_dict()
+                        fig_individual = crear_grafico_individual(resultado_prod)
+                        st.pyplot(fig_individual)
+                        
+                        st.info("""
+                        **Cómo leer este gráfico de estrategia:**
+                        - **Línea Roja (PR):** Tu inventario no debe caer por debajo de este punto. Si lo hace, ordena.
+                        - **Línea Verde (Stock Máximo):** La cantidad a la que llega tu inventario después de recibir la **Cantidad a Ordenar (OA)**.
+                        - **Línea Naranja Punteada:** El pronóstico de tus ventas para los días de Lead Time.
+                        """)
+                        
+                    # Gráfico Comparativo de todos los productos (se mantiene para visión general)
+                    st.markdown("### 📊 Tendencias de Ventas (Visión General)")
+                    fig_comparativo = crear_grafico_comparativo(df_exitosos.to_dict('records'))
+                    st.pyplot(fig_comparativo)
+
+                # Mostrar errores si los hay
+                df_errores = df_resultados[df_resultados['error'].notnull()]
+                if not df_errores.empty:
+                    st.markdown("---")
+                    st.warning(f"⚠️ {len(df_errores)} productos no pudieron analizarse:")
+                    for idx, row in df_errores.iterrows():
+                        st.error(f"**{row['producto']}:** {row['error']}")
+                
         except Exception as e:
             st.error(f"Error al procesar el archivo: {str(e)}")
-            st.info("Verifica el formato de tu CSV.")
 
     else:
         st.info("👆 **Comienza subiendo tu archivo CSV de ventas** para obtener el análisis avanzado.")
