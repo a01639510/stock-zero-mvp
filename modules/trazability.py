@@ -33,22 +33,21 @@ def calcular_trazabilidad_inventario(
     entradas_prod['cantidad_recibida'] = pd.to_numeric(entradas_prod['cantidad_recibida'], errors='coerce').fillna(0)
     
     # Rango de fechas: Desde el inicio de los datos hasta hoy + 60 días
-    fecha_actual = datetime.now().normalize()
     
-    # Manejo robusto de fechas mínimas (evita el error si hay NaT)
-    min_date_ventas = ventas_prod['fecha'].min() if not ventas_prod.empty and not pd.isna(ventas_prod['fecha'].min()) else fecha_actual
-    min_date_entradas = entradas_prod['fecha'].min() if not entradas_prod.empty and not pd.isna(entradas_prod['fecha'].min()) else fecha_actual
+    # CORRECCIÓN CLAVE: Usamos .now().date() para obtener un objeto de fecha nativa
+    # y luego lo convertimos a datetime con tiempo 00:00:00. 
+    fecha_actual = datetime.now().date()
+    fecha_actual_dt = datetime(fecha_actual.year, fecha_actual.month, fecha_actual.day)
+    
+    # Obtener las fechas mínimas ya normalizadas (a 00:00:00) del DataFrame principal
+    min_date_ventas = ventas_prod['fecha'].min() if not ventas_prod.empty and not pd.isna(ventas_prod['fecha'].min()) else fecha_actual_dt
+    min_date_entradas = entradas_prod['fecha'].min() if not entradas_prod.empty and not pd.isna(entradas_prod['fecha'].min()) else fecha_actual_dt
 
-    # Asegurar que son Timestamps y normalizar (si no lo están ya)
-    if isinstance(min_date_ventas, pd.Timestamp):
-         min_date_ventas = min_date_ventas.normalize()
-    if isinstance(min_date_entradas, pd.Timestamp):
-         min_date_entradas = min_date_entradas.normalize()
-         
+    # Aseguramos que solo comparamos objetos datetime.datetime o pd.Timestamp (que se comportan similarmente aquí)
     min_date = min(min_date_ventas, min_date_entradas)
     
     dias_proyeccion = 60
-    fechas = pd.date_range(start=min_date, end=fecha_actual + timedelta(days=dias_proyeccion), name='Fecha')
+    fechas = pd.date_range(start=min_date, end=fecha_actual_dt + timedelta(days=dias_proyeccion), name='Fecha')
     
     df_diario = pd.DataFrame(index=fechas)
     df_diario['Ventas'] = 0.0
@@ -56,6 +55,7 @@ def calcular_trazabilidad_inventario(
     
     # Mapear ventas y entradas históricas
     if not ventas_prod.empty:
+        # Aseguramos que la columna 'fecha' sea el índice y luego la re-muestreamos
         ventas_diarias = ventas_prod.set_index('fecha').resample('D').sum()['cantidad_vendida']
         ventas_diarias = pd.Series(ventas_diarias).fillna(0)
         df_diario.loc[df_diario.index.intersection(ventas_diarias.index), 'Ventas'] = ventas_diarias
@@ -70,7 +70,7 @@ def calcular_trazabilidad_inventario(
     df_diario['Stock'] = 0.0
     df_diario['Simulacion_Entradas'] = 0.0
     
-    df_diario['Tipo'] = np.where(df_diario.index.date <= fecha_actual.date(), 'Histórico', 'Proyectado')
+    df_diario['Tipo'] = np.where(df_diario.index.date <= fecha_actual_dt.date(), 'Histórico', 'Proyectado')
     
     stock_t = stock_actual_manual
     
