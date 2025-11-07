@@ -110,7 +110,93 @@ st.set_page_config(page_title="Stock Zero", page_icon="📦", layout="wide")
 # CSS personalizado - Tema Azul Marino
 st.markdown("""
 
+    
+<style>
+/* ===========================
+   FIX: expander title y botones de descarga
+   =========================== */
 
+/* Expander: forzar texto blanco y fondo azul marino */
+.streamlit-expanderHeader,
+div[data-testid="stExpander"] .streamlit-expanderHeader {
+    color: #ffffff !important;
+    background-color: #1e3a5f !important;
+    border-left: 3px solid #1e3a5f !important;
+    font-weight: 700 !important;
+}
+
+/* Si el título del expander está dentro de un botón/label (variaciones DOM) */
+div[data-testid="stExpander"] button.streamlit-expanderHeader,
+div[data-testid="stExpander"] button .streamlit-expanderHeader,
+.streamlit-expanderHeader * {
+    color: #ffffff !important;
+}
+
+/* Asegurar que el texto dentro del expander (no el header) se mantenga legible */
+div[data-testid="stExpander"] .streamlit-expanderContent,
+div[data-testid="stExpander"] .streamlit-expanderContent * {
+    color: #1a202c !important;
+    background-color: #ffffff !important;
+}
+
+/* Tabs: mantener texto blanco cuando seleccionados (refuerzo) */
+.stTabs [aria-selected="true"],
+.stTabs [aria-selected="true"] * {
+    background-color: #1e3a5f !important;
+    color: #ffffff !important;
+}
+
+/* Botones de descarga - todas las variaciones posibles */
+.stDownloadButton > button,
+div[data-testid="stDownloadButton"] button,
+button[data-testid="stDownloadButton"],
+.stDownloadButton button,
+div.stDownloadButton > button,
+div[jscontroller] .stDownloadButton > button { 
+    background-color: #1e3a5f !important;
+    color: #ffffff !important;
+    border: none !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+}
+
+/* Forzar color blanco a todo el contenido interno del botón (span, svg, texto) */
+.stDownloadButton > button * ,
+div[data-testid="stDownloadButton"] button * {
+    color: #ffffff !important;
+}
+
+/* Hover del botón descarga */
+.stDownloadButton > button:hover,
+div[data-testid="stDownloadButton"] button:hover {
+    background-color: #2d5a8f !important;
+}
+
+/* Asegurar que enlaces o etiquetas dentro del botón también sean blancos */
+.stDownloadButton a, .stDownloadButton a * {
+    color: #ffffff !important;
+}
+
+/* Variante: cuando el botón está dentro de un tab/expander (casos DOM distintos) */
+div[data-testid="stExpander"] .stDownloadButton > button,
+div[data-testid="stExpander"] .stDownloadButton button,
+div[role="tablist"] .stDownloadButton > button {
+    background-color: #1e3a5f !important;
+    color: #ffffff !important;
+}
+
+/* Protección extra: si el botón tiene clases dinámicas con css-*, forzar color */
+button[class^="css-"] {
+    color: inherit !important;
+}
+
+/* Quitar sombras indeseadas que puedan hacer el texto difícil de leer */
+.stDownloadButton > button:focus,
+.stDownloadButton > button:active {
+    box-shadow: none !important;
+    outline: none !important;
+}
+</style>
     <style>
     /* === FIX: Colores para tabs seleccionados y botones dentro === */
     
