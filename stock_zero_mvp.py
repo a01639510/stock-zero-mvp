@@ -4,7 +4,6 @@ from datetime import datetime
 import warnings
 
 # --- IMPORTACIONES DE MÓDULOS ---
-# Asegúrate de que estos archivos estén en la carpeta 'modules'
 from modules.core_analysis import procesar_multiple_productos
 from modules.trazability import calcular_trazabilidad_inventario
 from modules.components import (
@@ -13,7 +12,21 @@ from modules.components import (
     crear_grafico_trazabilidad_total, 
     generar_inventario_base
 )
-from modules.recipes import recetas_app  # <-- NUEVA IMPORTACIÓN
+
+# Importación segura del módulo de recetas
+try:
+    from modules.recipes import recetas_app
+    RECIPES_AVAILABLE = True
+except ImportError as e:
+    RECIPES_AVAILABLE = False
+    st.error(f"""
+    ⚠️ **Error al cargar el módulo de recetas**: {str(e)}
+    
+    Para solucionar:
+    1. Crea el archivo `modules/recipes.py`
+    2. Copia el código del módulo de recetas
+    3. Asegúrate de que existe `modules/__init__.py`
+    """)
 
 warnings.filterwarnings('ignore')
 
@@ -37,11 +50,17 @@ if 'inventario_df' not in st.session_state:
 
 
 # USAMOS PESTAÑAS PARA SEPARAR LAS FUNCIONALIDADES
-tab_optimizacion, tab_control_basico, tab_recetas = st.tabs([
-    "🚀 Optimización de Inventario (Pronóstico)", 
-    "🛒 Control de Inventario Básico",
-    "👨‍🍳 Recetas y Productos"
-])
+if RECIPES_AVAILABLE:
+    tab_optimizacion, tab_control_basico, tab_recetas = st.tabs([
+        "🚀 Optimización de Inventario (Pronóstico)", 
+        "🛒 Control de Inventario Básico",
+        "👨‍🍳 Recetas y Productos"
+    ])
+else:
+    tab_optimizacion, tab_control_basico = st.tabs([
+        "🚀 Optimización de Inventario (Pronóstico)", 
+        "🛒 Control de Inventario Básico"
+    ])
 
 # ============================================
 # PESTAÑA 1: OPTIMIZACIÓN Y PRONÓSTICO
@@ -104,7 +123,7 @@ with tab_optimizacion:
                 st.error("❌ Formato de VENTAS no reconocido. Columnas requeridas: `fecha` y (`producto`, `cantidad_vendida`) o `fecha` y columnas de producto.")
                 st.stop()
             
-            # Limpieza robusta de datos de ventas (CORRECCIÓN CLAVE: usar .dt.normalize())
+            # Limpieza robusta de datos de ventas
             df_ventas['fecha'] = pd.to_datetime(df_ventas['fecha'], errors='coerce')
             df_ventas = df_ventas.dropna(subset=['fecha'])
             df_ventas['fecha'] = df_ventas['fecha'].dt.normalize()
@@ -279,5 +298,6 @@ with tab_control_basico:
 # ============================================
 # PESTAÑA 3: RECETAS Y PRODUCTOS
 # ============================================
-with tab_recetas:
-    recetas_app()
+if RECIPES_AVAILABLE:
+    with tab_recetas:
+        recetas_app()
