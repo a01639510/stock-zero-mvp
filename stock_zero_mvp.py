@@ -164,26 +164,31 @@ def calcular_trazabilidad_inventario(
     Calcula la trazabilidad histórica del stock y la proyecta al futuro.
     """
     
-    # ... (La implementación de esta función permanece igual al último código proporcionado)
-    # ... (Asegúrate de que la implementación en tu archivo sea la misma que la anterior)
-    
-    # Inicia la función de trazabilidad (la versión anterior es correcta)
     from datetime import datetime, timedelta
 
     # 1. PREPARACIÓN DE DATOS DIARIOS
     
-    ventas_prod = df_ventas[df_ventas['producto'] == nombre_producto][['fecha', 'cantidad_vendida']]
-    entradas_prod = df_entradas[df_entradas['producto'] == nombre_producto][['fecha', 'cantidad_recibida']]
-
+    # --- CORRECCIÓN DE TRAZABILIDAD: Limpieza de tipos de datos al inicio ---
+    
+    # Asegurar que las columnas de cantidad sean numéricas y las fechas sean datetime
+    ventas_prod = df_ventas[df_ventas['producto'] == nombre_producto][['fecha', 'cantidad_vendida']].copy()
+    entradas_prod = df_entradas[df_entradas['producto'] == nombre_producto][['fecha', 'cantidad_recibida']].copy()
+    
+    # Aplicar .fillna(0) después de .to_numeric para evitar el error 'numpy.float64'
+    ventas_prod['cantidad_vendida'] = pd.to_numeric(ventas_prod['cantidad_vendida'], errors='coerce').fillna(0)
+    entradas_prod['cantidad_recibida'] = pd.to_numeric(entradas_prod['cantidad_recibida'], errors='coerce').fillna(0)
+    
     if ventas_prod.empty and entradas_prod.empty:
         return None
 
+    # Encontrar rango de fechas de manera segura
     min_date_ventas = ventas_prod['fecha'].min().date() if not ventas_prod.empty else datetime.now().date()
     min_date_entradas = entradas_prod['fecha'].min().date() if not entradas_prod.empty else datetime.now().date()
     min_date = min(min_date_ventas, min_date_entradas)
     
     fecha_actual = datetime.now().date()
     
+    # Asegurar rango de fechas con proyección futura
     dias_proyeccion = (fecha_actual - min_date).days + lead_time + 10
     fechas = pd.date_range(start=min_date, periods=dias_proyeccion, name='Fecha')
     
@@ -191,6 +196,7 @@ def calcular_trazabilidad_inventario(
     df_diario['Ventas'] = 0.0
     df_diario['Entradas'] = 0.0
     
+    # Mapear ventas y entradas a la serie diaria
     if not ventas_prod.empty:
         ventas_diarias = ventas_prod.set_index('fecha').resample('D').sum()['cantidad_vendida'].fillna(0)
         df_diario.loc[df_diario.index.intersection(ventas_diarias.index), 'Ventas'] = ventas_diarias
@@ -202,44 +208,54 @@ def calcular_trazabilidad_inventario(
     # 2. CÁLCULO DEL INVENTARIO HISTÓRICO
     
     df_diario['Stock'] = 0.0
+    # Comenzamos con el stock actual y calculamos hacia atrás
     stock_t = stock_actual_manual
     
+    # Iterar hacia atrás:
     for date_ts in reversed(df_diario.index):
         date = date_ts.date()
         
         if date > fecha_actual:
-            continue
+            continue  # Saltar días futuros
         
         df_diario.loc[date_ts, 'Stock'] = stock_t
         
         ventas_t = df_diario.loc[date_ts, 'Ventas']
         entradas_t = df_diario.loc[date_ts, 'Entradas']
         
+        # Fórmula inversa: Stock del día anterior = Stock de hoy + Ventas de hoy - Entradas de hoy
         stock_t = stock_t + ventas_t - entradas_t
         stock_t = max(0, stock_t)
         
     # 3. PROYECCIÓN DEL INVENTARIO FUTURO
     
+    # Asegurar el stock del día de hoy (punto de inicio para la proyección)
     try:
         df_diario.loc[fecha_actual.strftime("%Y-%m-%d"), 'Stock'] = stock_actual_manual
     except KeyError:
          pass 
 
+    # Proyectar hacia adelante:
     for i, date_ts in enumerate(df_diario.index):
         date = date_ts.date()
         
         if date > fecha_actual:
             
+            # Obtener el stock del día anterior
             idx_anterior = df_diario.index[i - 1]
             stock_anterior = df_diario.loc[idx_anterior, 'Stock']
             
+            # Stock proyectado = Stock anterior - Consumo promedio diario
             stock_proyectado = stock_anterior - pronostico_diario_promedio
             
             df_diario.loc[date_ts, 'Stock'] = max(0, stock_proyectado)
             
     # 4. MARCAR LA DIVISIÓN 
     
+    # Convertimos el índice a objetos de fecha de Python para una comparación segura
     fechas_indice = np.array([d.date() for d in df_diario.index])
+    
+    # Usamos np.where para la comparación segura.
     df_diario['Tipo'] = np.where(fechas_indice <= fecha_actual, 'Histórico', 'Proyectado')
     
     return df_diario.reset_index()
@@ -336,11 +352,13 @@ def generar_inventario_base():
         stock_init = 50.0
         pr_init = 10.0
         costo_init = 5.0
+        orden_init = 20.0 # Valor inicial para la cantidad a ordenar
     else:
         productos_base = productos_de_ventas
         stock_init = 0.0
         pr_init = 0.0
         costo_init = 1.0
+        orden_init = 0.0
 
     data = {
         'Producto': productos_base,
@@ -348,6 +366,7 @@ def generar_inventario_base():
         'Unidad': ['UNI'] * len(productos_base),
         'Stock Actual': [stock_init] * len(productos_base),
         'Punto de Reorden (PR)': [pr_init] * len(productos_base),
+        'Cantidad a Ordenar': [orden_init] * len(productos_base), # Nueva columna
         'Costo Unitario': [costo_init] * len(productos_base),
     }
     df = pd.DataFrame(data)
@@ -367,30 +386,35 @@ def generar_inventario_base():
     df['Valor Total'] = df['Stock Actual'] * df['Costo Unitario']
     return df
 
-def sincronizar_punto_reorden(df_inventario: pd.DataFrame, df_resultados: pd.DataFrame) -> pd.DataFrame:
+def sincronizar_puntos_optimos(df_inventario: pd.DataFrame, df_resultados: pd.DataFrame) -> pd.DataFrame:
     """
-    Actualiza la columna 'Punto de Reorden (PR)' en el inventario con los valores calculados.
+    Actualiza las columnas 'Punto de Reorden (PR)' y 'Cantidad a Ordenar' con los valores calculados.
     """
-    # 1. Crear un diccionario de PR {producto: punto_reorden}
+    # 1. Crear diccionarios de valores {producto: valor}
     pr_map = df_resultados.set_index('producto')['punto_reorden'].to_dict()
+    orden_map = df_resultados.set_index('producto')['cantidad_a_ordenar'].to_dict()
     
-    # 2. Mapear los valores de PR a la columna 'Punto de Reorden (PR)' del inventario
-    df_inventario['Punto de Reorden (PR) Mapeado'] = df_inventario['Producto'].map(pr_map).fillna(0)
+    # Asegurar que las columnas del inventario sean numéricas
+    for col in ['Punto de Reorden (PR)', 'Cantidad a Ordenar']:
+        df_inventario[col] = pd.to_numeric(df_inventario[col], errors='coerce').fillna(0)
     
-    # 3. Actualizar la columna, solo si el valor mapeado es > 0 (es decir, fue calculado)
-    # y conservar el valor manual si el producto no fue calculado (error)
-    
-    # Asegurar que la columna del inventario sea float para la comparación
-    df_inventario['Punto de Reorden (PR)'] = pd.to_numeric(df_inventario['Punto de Reorden (PR)'], errors='coerce').fillna(0)
-    
+    # 2. Mapear y actualizar PR
+    df_inventario['PR Mapeado'] = df_inventario['Producto'].map(pr_map).fillna(0)
     df_inventario['Punto de Reorden (PR)'] = np.where(
-        df_inventario['Punto de Reorden (PR) Mapeado'] > 0, 
-        df_inventario['Punto de Reorden (PR) Mapeado'].round(2),
-        df_inventario['Punto de Reorden (PR)']
+        df_inventario['PR Mapeado'] > 0, 
+        df_inventario['PR Mapeado'].round(2),
+        df_inventario['Punto de Reorden (PR)'] # Conserva el valor manual si el análisis falla
     )
+    df_inventario = df_inventario.drop(columns=['PR Mapeado'], errors='ignore')
     
-    # Limpiar columna auxiliar
-    df_inventario = df_inventario.drop(columns=['Punto de Reorden (PR) Mapeado'], errors='ignore')
+    # 3. Mapear y actualizar Cantidad a Ordenar
+    df_inventario['Orden Mapeado'] = df_inventario['Producto'].map(orden_map).fillna(0)
+    df_inventario['Cantidad a Ordenar'] = np.where(
+        df_inventario['Orden Mapeado'] > 0, 
+        df_inventario['Orden Mapeado'].round(2),
+        df_inventario['Cantidad a Ordenar'] # Conserva el valor manual si el análisis falla
+    )
+    df_inventario = df_inventario.drop(columns=['Orden Mapeado'], errors='ignore')
     
     return df_inventario
 
@@ -399,7 +423,7 @@ def inventario_basico_app():
     """Interfaz para el control de inventario básico tipo Excel."""
     
     st.header("🛒 Control de Inventario Básico")
-    st.info("💡 Usa esta sección para gestionar el stock físico. **Actualiza 'Stock Actual'** aquí para que las proyecciones de stock funcionen correctamente.")
+    st.info("💡 Usa esta sección para gestionar el stock físico. **Actualiza 'Stock Actual'** aquí. El **Punto de Reorden (PR)** y la **Cantidad a Ordenar** se actualizan automáticamente con el análisis.")
 
     # --- Lógica de inicialización y SINCRONIZACIÓN ---
     
@@ -408,14 +432,15 @@ def inventario_basico_app():
         
     df_inventario_actual = st.session_state['inventario_df'].copy()
     
-    # 1. Sincronizar PR si los resultados están disponibles
+    # 1. Sincronizar PR y Cantidad a Ordenar si los resultados están disponibles
     if 'df_resultados' in st.session_state:
         df_resultados = st.session_state['df_resultados']
         if not df_resultados.empty:
-            df_inventario_actual = sincronizar_punto_reorden(df_inventario_actual, df_resultados)
+            df_inventario_actual = sincronizar_puntos_optimos(df_inventario_actual, df_resultados)
             st.session_state['inventario_df'] = df_inventario_actual # Guardar la sincronización
 
     # 2. Sincronización de productos nuevos de ventas (persistencia)
+    # ... (La lógica de agregar nuevos productos de ventas permanece igual)
     productos_de_ventas_actuales = set()
     if 'df_ventas_trazabilidad' in st.session_state:
         df_ventas = st.session_state['df_ventas_trazabilidad']
@@ -425,13 +450,14 @@ def inventario_basico_app():
         nuevos_productos = list(productos_de_ventas_actuales - productos_en_inventario)
         
         if nuevos_productos:
-            # Crear un DataFrame solo para los nuevos productos (con PR/Stock en 0)
+            # Crear un DataFrame solo para los nuevos productos
             data_nuevos = {
                 'Producto': nuevos_productos,
                 'Categoría': ['Insumo'] * len(nuevos_productos),
                 'Unidad': ['UNI'] * len(nuevos_productos),
                 'Stock Actual': [0.0] * len(nuevos_productos),
                 'Punto de Reorden (PR)': [0.0] * len(nuevos_productos),
+                'Cantidad a Ordenar': [0.0] * len(nuevos_productos),
                 'Costo Unitario': [1.0] * len(nuevos_productos),
                 'Faltante?': [True] * len(nuevos_productos),
                 'Valor Total': [0.0] * len(nuevos_productos),
@@ -449,7 +475,6 @@ def inventario_basico_app():
                 default='UNI'
             )
             
-            # Concatenar y actualizar el estado de sesión
             df_inventario_actual = pd.concat([df_inventario_actual, df_nuevos], ignore_index=True)
             st.session_state['inventario_df'] = df_inventario_actual
             st.info(f"✨ Se han agregado **{len(nuevos_productos)}** productos nuevos de tu archivo de ventas a esta tabla.")
@@ -460,11 +485,13 @@ def inventario_basico_app():
     # --- Edición del DataFrame ---
     st.subheader("1️⃣ Inventario Actual (Edición en Vivo)")
     
-    editable_columns = ['Producto', 'Categoría', 'Unidad', 'Stock Actual', 'Punto de Reorden (PR)', 'Costo Unitario']
+    editable_columns = ['Producto', 'Categoría', 'Unidad', 'Stock Actual', 'Punto de Reorden (PR)', 'Cantidad a Ordenar', 'Costo Unitario']
     column_config = {
         "Producto": st.column_config.TextColumn("Producto", required=True),
         "Stock Actual": st.column_config.NumberColumn("Stock Actual", required=True, format="%.2f"),
-        "Punto de Reorden (PR)": st.column_config.NumberColumn("Punto de Reorden (PR)", required=True, format="%.2f"),
+        # DESHABILITACIÓN DE EDICIÓN MANUAL DEL PR Y CANTIDAD A ORDENAR
+        "Punto de Reorden (PR)": st.column_config.NumberColumn("Punto de Reorden (PR)", required=True, format="%.2f", disabled=True),
+        "Cantidad a Ordenar": st.column_config.NumberColumn("Cantidad a Ordenar", required=True, format="%.2f", disabled=True),
         "Costo Unitario": st.column_config.NumberColumn("Costo Unitario", format="$%.2f"),
         "Faltante?": st.column_config.CheckboxColumn("Faltante?", disabled=True),
         "Valor Total": st.column_config.NumberColumn("Valor Total", disabled=True, format="$%.2f"),
@@ -480,14 +507,13 @@ def inventario_basico_app():
         key="data_editor_inventario"
     )
 
-    # Re-calcular columnas derivadas (CORRECCIÓN FINAL DE FILLNA)
+    # Re-calcular columnas derivadas (manejo robusto de NaN)
     if not edited_df.empty:
         try:
             df_final = edited_df.copy()
             
             # Convertir a numérico y manejar NaN de manera robusta
-            for col in ['Stock Actual', 'Punto de Reorden (PR)', 'Costo Unitario']:
-                # Usar .loc para operar en la Serie y luego rellenar los NaT (Not a Number, por errores en la edición)
+            for col in ['Stock Actual', 'Punto de Reorden (PR)', 'Cantidad a Ordenar', 'Costo Unitario']:
                 df_final.loc[:, col] = pd.to_numeric(df_final[col], errors='coerce').fillna(0)
             
             # Recalcular columnas derivadas
@@ -498,13 +524,12 @@ def inventario_basico_app():
             st.session_state['inventario_df'] = df_final
             
         except Exception as e:
-            # Mostrar un error informativo al usuario si el cálculo falla
-            st.error(f"Error al procesar la tabla editada. Asegúrate de que las columnas 'Stock Actual', 'Punto de Reorden (PR)' y 'Costo Unitario' contengan solo números. Detalle: {e}")
-            st.stop() # Detener para evitar más errores en la pantalla
+            st.error(f"Error al procesar la tabla editada. Asegúrate de que las columnas numéricas contengan solo números. Detalle: {e}")
+            st.stop()
 
     df_actual = st.session_state['inventario_df']
 
-    # --- Alertas y Totales ---
+    # --- Alertas y Totales (SE AGREGA CANTIDAD A ORDENAR) ---
     st.subheader("2️⃣ Alertas y Totales")
 
     items_faltantes = df_actual[df_actual['Faltante?']].sort_values('Punto de Reorden (PR)', ascending=False)
@@ -518,8 +543,9 @@ def inventario_basico_app():
 
     if not items_faltantes.empty:
         st.warning("⚠️ **¡URGENTE!** Los siguientes ítems están por debajo de su Punto de Reorden y deben ser pedidos.")
+        # Se muestra la Cantidad a Ordenar calculada
         st.dataframe(
-            items_faltantes[['Producto', 'Unidad', 'Stock Actual', 'Punto de Reorden (PR)']],
+            items_faltantes[['Producto', 'Unidad', 'Stock Actual', 'Punto de Reorden (PR)', 'Cantidad a Ordenar']],
             use_container_width=True,
             hide_index=True
         )
@@ -639,13 +665,9 @@ with tab_optimizacion:
             st.session_state['df_ventas_trazabilidad'] = df_ventas
             st.session_state['df_stock_trazabilidad'] = df_stock
             
-            # IMPORTANTE: Forzar la inicialización/sincronización del inventario básico
+            # Forzar la inicialización/sincronización del inventario básico
             if 'inventario_df' not in st.session_state:
                 st.session_state['inventario_df'] = generar_inventario_base()
-            else:
-                # Si ya existe, forzar la adición de nuevos productos de ventas
-                # Esta lógica está en inventario_basico_app, pero la forzamos aquí también si es necesario
-                inventario_basico_app() 
                 
             st.markdown("### 2️⃣ Datos cargados correctamente")
             
@@ -673,11 +695,10 @@ with tab_optimizacion:
                         frecuencia
                     )
                 
-                # --- GUARDAR RESULTADOS Y ACTIVAR SINCRONIZACIÓN DE PR ---
+                # --- GUARDAR RESULTADOS Y ACTIVAR SINCRONIZACIÓN DE PR/CANTIDAD A ORDENAR ---
                 st.session_state['df_resultados'] = pd.DataFrame(resultados)
                 # --- FIN GUARDADO ---
                 
-                # Forzar un rerun para que la sección de resultados se actualice
                 st.rerun()
 
             # --- SECCIÓN DE RESULTADOS ---
@@ -689,7 +710,7 @@ with tab_optimizacion:
                 st.markdown("## 📊 Resultados del Análisis")
                 
                 if not df_exitosos.empty:
-                    st.success(f"✅ Se analizaron exitosamente {len(df_exitosos)} productos. **El Punto de Reorden (PR) ha sido actualizado en la pestaña de Control de Inventario Básico.**")
+                    st.success(f"✅ Se analizaron exitosamente {len(df_exitosos)} productos. **El Punto de Reorden (PR) y la Cantidad a Ordenar han sido actualizados en la pestaña de Control de Inventario Básico.**")
                     
                     total_reorden = df_exitosos['punto_reorden'].sum()
                     total_ordenar = df_exitosos['cantidad_a_ordenar'].sum()
@@ -782,7 +803,6 @@ with tab_optimizacion:
 
 
         except Exception as e:
-            # Captura cualquier error de procesamiento de ventas y muestra un mensaje
             st.error(f"Error al procesar el archivo de ventas o al calcular. Asegúrate de que las columnas `fecha` y `cantidad_vendida` sean correctas. Detalle: {e}")
             st.stop()
     else:
