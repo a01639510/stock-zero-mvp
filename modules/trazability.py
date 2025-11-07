@@ -34,8 +34,17 @@ def calcular_trazabilidad_inventario(
     
     # Rango de fechas: Desde el inicio de los datos hasta hoy + 60 días
     fecha_actual = datetime.now().normalize()
-    min_date_ventas = ventas_prod['fecha'].min().normalize() if not ventas_prod.empty else fecha_actual
-    min_date_entradas = entradas_prod['fecha'].min().normalize() if not entradas_prod.empty else fecha_actual
+    
+    # CORRECCIÓN DE FECHAS MÍNIMAS (Más robusta contra NaT)
+    min_date_ventas = ventas_prod['fecha'].min() if not ventas_prod.empty and not pd.isna(ventas_prod['fecha'].min()) else fecha_actual
+    min_date_entradas = entradas_prod['fecha'].min() if not entradas_prod.empty and not pd.isna(entradas_prod['fecha'].min()) else fecha_actual
+
+    # Asegurar que son Timestamps y normalizar (si no lo están ya)
+    if isinstance(min_date_ventas, pd.Timestamp):
+         min_date_ventas = min_date_ventas.normalize()
+    if isinstance(min_date_entradas, pd.Timestamp):
+         min_date_entradas = min_date_entradas.normalize()
+         
     min_date = min(min_date_ventas, min_date_entradas)
     
     dias_proyeccion = 60
