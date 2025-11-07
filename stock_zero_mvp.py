@@ -510,7 +510,58 @@ with tab_optimizacion:
             with col2: st.metric("📦 Productos únicos", df['producto'].nunique())
             with col3: st.metric("📅 Total registros", len(df))
             with col4: st.metric("📊 Días de datos", (df['fecha'].max() - df['fecha'].min()).days + 1)
-            
+            # ... código anterior para mostrar la tabla de ABC ...
+
+                    # ============================================
+                    # GRÁFICOS INDIVIDUALES Y ESTRATEGIA VISUAL
+                    # ============================================
+                    st.markdown("---")
+                    st.markdown("### 📈 Visualización Detallada y Estrategia de Inventario")
+                    
+                    # Cargar el DF de Inventario Básico del state
+                    df_inv_basico = st.session_state.get('inventario_df', pd.DataFrame())
+                    
+                    # Selector de producto
+                    producto_seleccionado = st.selectbox(
+                        "Selecciona un producto para ver la simulación de su Nivel de Inventario:",
+                        options=df_exitosos['producto'].tolist()
+                    )
+                    
+                    if producto_seleccionado:
+                        resultado_prod = df_exitosos[df_exitosos['producto'] == producto_seleccionado].iloc[0].to_dict()
+                        
+                        # Intentar obtener el Stock Actual del inventario básico
+                        if not df_inv_basico.empty and 'Producto' in df_inv_basico.columns:
+                            stock_row = df_inv_basico[df_inv_basico['Producto'] == producto_seleccionado]
+                            if not stock_row.empty:
+                                stock_actual = stock_row['Stock Actual'].iloc[0]
+                                
+                                # Generar el nuevo gráfico de Nivel de Inventario
+                                fig_proyeccion = crear_grafico_inventario_proyectado(
+                                    resultado_prod,
+                                    stock_actual,
+                                    lead_time
+                                )
+                                st.pyplot(fig_proyeccion)
+                                
+                                st.info(f"""
+                                **Análisis de Proyección (Stock Actual: {stock_actual:.0f} unidades):**
+                                - **Línea Azul:** Simula la caída del stock y el reabastecimiento planeado.
+                                - **Línea Roja (PR):** El stock toca esta línea al final del Lead Time (día {lead_time}).
+                                - **Conclusión:** Si el stock cae a cero antes de la llegada del pedido, el PR y/o el Stock de Seguridad son insuficientes.
+                                """)
+                            else:
+                                st.warning(f"⚠️ **{producto_seleccionado}** no encontrado en la pestaña de Control de Inventario Básico. Usando Stock Actual = 0 para la simulación.")
+                                fig_proyeccion = crear_grafico_inventario_proyectado(resultado_prod, 0.0, lead_time)
+                                st.pyplot(fig_proyeccion)
+                        else:
+                            st.warning("⚠️ El Control de Inventario Básico no está cargado. No se puede simular el nivel de stock.")
+
+
+                    # Gráfico Comparativo de todos los productos (se mantiene para visión general)
+                    st.markdown("### 📊 Tendencias de Ventas Históricas (Visión General)")
+                    fig_comparativo = crear_grafico_comparativo(df_exitosos.to_dict('records'))
+                    st.pyplot(fig_comparativo)
             with st.expander("👁️ Ver datos cargados"):
                 st.dataframe(df.head(20), use_container_width=True)
             
