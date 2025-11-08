@@ -1,4 +1,84 @@
-# modules/analytics.py
+    # === 12. COMPARACIÓN ECONÓMICA: TRADICIONAL vs NUESTRO ===
+    st.markdown("---")
+    st.markdown("### 💰 Comparación Económica: Tradicional vs Nuestro Sistema")
+    st.info("**Tradicional**: Reorden fijo cada 30 días (300 unidades). **Nuestro**: PR dinámico + Lead Time.")
+
+    # Parámetros para simulación (usando tus datos)
+    periodo_dias = 365  # 1 año
+    costo_pedido = 50
+    costo_holding_anual = 0.1  # 10%
+    costo_stockout = 100
+
+    # Simular demanda (basada en tu tendencia ponderada)
+    demanda_simulada = np.cumsum(np.random.normal(demanda_diaria, demanda_diaria*0.2, periodo_dias))
+
+    # Sistema Tradicional
+    reorden_trad = 30
+    cantidad_trad = 300
+    pedidos_trad = periodo_dias // reorden_trad
+    stock_prom_trad = cantidad_trad / 2
+    stockouts_trad = max(0, sum(demanda_simulada[::reorden_trad]) - cantidad_trad * pedidos_trad) * 0.1  # 10% quiebres
+
+    costos_trad = {
+        'pedidos': pedidos_trad * costo_pedido,
+        'holding': stock_prom_trad * cantidad_trad * costo_holding_anual,
+        'stockout': stockouts_trad * costo_stockout,
+        'total': 0
+    }
+    costos_trad['total'] = sum(costos_trad.values())
+
+    # Nuestro Sistema
+    pedidos_nuestro = int(periodo_dias / (PR + lead_time))  # Aproximado
+    stock_prom_nuestro = cantidad_orden / 2
+    stockouts_nuestro = max(0, stock_prom_nuestro - PR) * 0.05  # Menos quiebres (5%)
+
+    costos_nuestro = {
+        'pedidos': pedidos_nuestro * costo_pedido,
+        'holding': stock_prom_nuestro * cantidad_orden * costo_holding_anual,
+        'stockout': stockouts_nuestro * costo_stockout,
+        'total': 0
+    }
+    costos_nuestro['total'] = sum(costos_nuestro.values())
+
+    # Tabla de comparación
+    comparacion = pd.DataFrame({
+        'Métrica': ['Número de Pedidos', 'Costo Pedidos ($)', 'Costo Holding ($)', 'Costo Stockout ($)', 'Costo Total ($)'],
+        'Tradicional': [
+            f"{pedidos_trad}",
+            f"${costos_trad['pedidos']:.0f}",
+            f"${costos_trad['holding']:.0f}",
+            f"${costos_trad['stockout']:.0f}",
+            f"${costos_trad['total']:.0f}"
+        ],
+        'Nuestro': [
+            f"{pedidos_nuestro}",
+            f"${costos_nuestro['pedidos']:.0f}",
+            f"${costos_nuestro['holding']:.0f}",
+            f"${costos_nuestro['stockout']:.0f}",
+            f"${costos_nuestro['total']:.0f}"
+        ],
+        'Ahorro (%)': [
+            f"{((pedidos_trad - pedidos_nuestro) / pedidos_trad * 100):.1f}%",
+            f"{((costos_trad['pedidos'] - costos_nuestro['pedidos']) / costos_trad['pedidos'] * 100):.1f}%",
+            f"{((costos_trad['holding'] - costos_nuestro['holding']) / costos_trad['holding'] * 100):.1f}%",
+            f"{((costos_trad['stockout'] - costos_nuestro['stockout']) / costos_trad['stockout'] * 100):.1f}%" if costos_trad['stockout'] > 0 else "100%",
+            f"{((costos_trad['total'] - costos_nuestro['total']) / costos_trad['total'] * 100):.1f}%"
+        ]
+    })
+
+    st.dataframe(comparacion, use_container_width=True, hide_index=True)
+
+    # Gráfico de costos
+    fig_costos = go.Figure(data=[
+        go.Bar(name='Tradicional', x=['Pedidos', 'Holding', 'Stockout'], y=[costos_trad['pedidos'], costos_trad['holding'], costos_trad['stockout']]),
+        go.Bar(name='Nuestro', x=['Pedidos', 'Holding', 'Stockout'], y=[costos_nuestro['pedidos'], costos_nuestro['holding'], costos_nuestro['stockout']])
+    ])
+    fig_costos.update_layout(barmode='group', title="Comparación de Costos ($)", xaxis_title="Tipo de Costo", yaxis_title="Costo ($)")
+    st.plotly_chart(fig_costos, width='stretch')
+
+    ahorro_total = ((costos_trad['total'] - costos_nuestro['total']) / costos_trad['total'] * 100)
+    st.balloons() if ahorro_total > 0 else st.error("¡Nuestro sistema ahorra!")
+    st.success(f"**Ahorro total anual: {ahorro_total:.1f}%** → Ahorro de ${costos_trad['total'] - costos_nuestro['total']:.0f}")# modules/analytics.py
 import streamlit as st
 import pandas as pd
 import numpy as np
