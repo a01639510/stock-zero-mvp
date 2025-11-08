@@ -193,64 +193,100 @@ def analytics_app():
     with col3: st.metric("Stock Inicial", f"{PR + cantidad_orden:.0f}")
     st.success(f"**Pide {cantidad_orden:.0f} unidades** cuando stock ≤ **{PR:.0f}**")
 
-    # === COMPARACIÓN ECONÓMICA ===
+        # === COMPARACIÓN ECONÓMICA: RESTAURANTE ===
     st.markdown("---")
-    st.markdown("### Comparación Económica: Tradicional vs Nuestro Sistema")
-    st.info("**Tradicional**: Reorden fijo cada 30 días (300 unidades). **Nuestro**: PR dinámico + Lead Time.")
+    st.markdown("### Restaurante: Costos Reales vs Nuestro Sistema")
+    st.info("**Tradicional**: Pedir cada 7 días (fijo). **Nuestro**: PR + Lead Time + Tendencia.")
 
+    # === COSTOS DE RESTAURANTE ===
+    costo_pedido = 25          # $25 por entrega (repartidor)
+    costo_holding_diario = 0.015  # 1.5% del valor del producto por día
+    costo_stockout = 200       # $200 por unidad perdida (cliente se va)
     periodo_dias = 365
-    costo_pedido = 50
-    costo_holding_anual = 0.1
-    costo_stockout = 100
 
-    # Sistema Tradicional
-    reorden_trad = 30
-    cantidad_trad = 300
-    pedidos_trad = periodo_dias // reorden_trad
+    # === VALOR DEL PRODUCTO (estimado) ===
+    # Asumimos que cada unidad cuesta $10 (ej. carne, queso, etc.)
+    valor_unidad = 10
+
+    # === SISTEMA TRADICIONAL (pedir cada 7 días) ===
+    frecuencia_trad = 7
+    cantidad_trad = int(demanda_diaria * frecuencia_trad * 1.5)  # 50% extra por seguridad
+    pedidos_trad = periodo_dias // frecuencia_trad
     stock_prom_trad = cantidad_trad / 2
-    quiebres_trad = max(0, (demanda_diaria * periodo_dias) - (cantidad_trad * pedidos_trad)) * 0.1
+    merma_trad = stock_prom_trad * 0.1  # 10% se echa a perder
+    quiebres_trad = max(0, (demanda_diaria * periodo_dias) - (cantidad_trad * pedidos_trad)) * 0.15  # 15% quiebres
 
     costos_trad = {
         'pedidos': pedidos_trad * costo_pedido,
-        'holding': stock_prom_trad * costo_holding_anual * cantidad_trad,
+        'holding': stock_prom_trad * costo_holding_diario * valor_unidad * periodo_dias,
+        'merma': merma_trad * valor_unidad,
         'stockout': quiebres_trad * costo_stockout
     }
-    costos_trad['total'] = sum(v for k, v in costos_trad.items() if k != 'total')
+    costos_trad['total'] = sum(costos_trad.values())
 
-    # Nuestro Sistema
+    # === NUESTRO SISTEMA (PR + Lead Time) ===
     pedidos_nuestro = len(eventos_entrega)
     stock_prom_nuestro = df_sim['stock'].mean()
-    quiebres_nuestro = max(0, PR - stock_prom_nuestro) * 0.05
+    merma_nuestro = stock_prom_nuestro * 0.03  # Solo 3% merma
+    quiebres_nuestro = max(0, PR - stock_prom_nuestro) * 0.02  # Solo 2% quiebres
 
     costos_nuestro = {
         'pedidos': pedidos_nuestro * costo_pedido,
-        'holding': stock_prom_nuestro * costo_holding_anual,
+        'holding': stock_prom_nuestro * costo_holding_diario * valor_unidad * periodo_dias,
+        'merma': merma_nuestro * valor_unidad,
         'stockout': quiebres_nuestro * costo_stockout
     }
-    costos_nuestro['total'] = sum(v for k, v in costos_nuestro.items() if k != 'total')
+    costos_nuestro['total'] = sum(costos_nuestro.values())
 
-    # Tabla
+    # === TABLA COMPARATIVA ===
     comparacion = pd.DataFrame({
-        'Métrica': ['Pedidos', 'Costo Pedidos ($)', 'Costo Holding ($)', 'Costo Stockout ($)', 'Costo Total ($)'],
-        'Tradicional': [pedidos_trad, f"${costos_trad['pedidos']:.0f}", f"${costos_trad['holding']:.0f}", f"${costos_trad['stockout']:.0f}", f"${costos_trad['total']:.0f}"],
-        'Nuestro': [pedidos_nuestro, f"${costos_nuestro['pedidos']:.0f}", f"${costos_nuestro['holding']:.0f}", f"${costos_nuestro['stockout']:.0f}", f"${costos_nuestro['total']:.0f}"],
-        'Ahorro (%)': [
-            f"{(pedidos_trad - pedidos_nuestro)/pedidos_trad*100:.1f}%" if pedidos_trad > 0 else "N/A",
-            f"{(costos_trad['pedidos'] - costos_nuestro['pedidos'])/costos_trad['pedidos']*100:.1f}%" if costos_trad['pedidos'] > 0 else "N/A",
-            f"{(costos_trad['holding'] - costos_nuestro['holding'])/costos_trad['holding']*100:.1f}%" if costos_trad['holding'] > 0 else "N/A",
-            f"{(costos_trad['stockout'] - costos_nuestro['stockout'])/costos_trad['stockout']*100:.1f}%" if costos_trad['stockout'] > 0 else "100%",
-            f"{(costos_trad['total'] - costos_nuestro['total'])/costos_trad['total']*100:.1f}%"
+        'Costo': ['Pedidos ($)', 'Almacenaje ($)', 'Merma ($)', 'Quiebres ($)', 'TOTAL ANUAL ($)'],
+        'Tradicional': [
+            f"${costos_trad['pedidos']:.0f}",
+            f"${costos_trad['holding']:.0f}",
+            f"${costos_trad['merma']:.0f}",
+            f"${costos_trad['stockout']:.0f}",
+            f"${costos_trad['total']:.0f}"
+        ],
+        'Nuestro': [
+            f"${costos_nuestro['pedidos']:.0f}",
+            f"${costos_nuestro['holding']:.0f}",
+            f"${costos_nuestro['merma']:.0f}",
+            f"${costos_nuestro['stockout']:.0f}",
+            f"${costos_nuestro['total']:.0f}"
+        ],
+        'Ahorro': [
+            f"${costos_trad['pedidos'] - costos_nuestro['pedidos']:.0f}",
+            f"${costos_trad['holding'] - costos_nuestro['holding']:.0f}",
+            f"${costos_trad['merma'] - costos_nuestro['merma']:.0f}",
+            f"${costos_trad['stockout'] - costos_nuestro['stockout']:.0f}",
+            f"${costos_trad['total'] - costos_nuestro['total']:.0f}"
         ]
     })
+
     st.dataframe(comparacion, use_container_width=True, hide_index=True)
 
-    # Gráfico de costos
+    # === GRÁFICO DE COSTOS ===
     fig_costos = go.Figure(data=[
-        go.Bar(name='Tradicional', x=['Pedidos', 'Holding', 'Stockout'], y=[costos_trad['pedidos'], costos_trad['holding'], costos_trad['stockout']]),
-        go.Bar(name='Nuestro', x=['Pedidos', 'Holding', 'Stockout'], y=[costos_nuestro['pedidos'], costos_nuestro['holding'], costos_nuestro['stockout']])
+        go.Bar(name='Tradicional', x=comparacion['Costo'][:-1], y=[
+            costos_trad['pedidos'], costos_trad['holding'], costos_trad['merma'], costos_trad['stockout']
+        ]),
+        go.Bar(name='Nuestro', x=comparacion['Costo'][:-1], y=[
+            costos_nuestro['pedidos'], costos_nuestro['holding'], costos_nuestro['merma'], costos_nuestro['stockout']
+        ])
     ])
-    fig_costos.update_layout(barmode='group', title="Comparación de Costos ($)", xaxis_title="Tipo", yaxis_title="$")
+    fig_costos.update_layout(
+        barmode='group',
+        title="Comparación de Costos Anuales ($)",
+        xaxis_title="Tipo de Costo",
+        yaxis_title="Costo ($)",
+        template="plotly_white"
+    )
     st.plotly_chart(fig_costos, width='stretch')
 
-    ahorro = (costos_trad['total'] - costos_nuestro['total']) / costos_trad['total'] * 100
-    st.success(f"**Ahorro total anual: {ahorro:.1f}%** → **${costos_trad['total'] - costos_nuestro['total']:.0f}**")
+    # === AHORRO FINAL ===
+    ahorro_total = costos_trad['total'] - costos_nuestro['total']
+    ahorro_porcentaje = (ahorro_total / costos_trad['total']) * 100 if costos_trad['total'] > 0 else 0
+
+    st.success(f"**Ahorro anual: ${ahorro_total:,.0f} ({ahorro_porcentaje:.1f}%)**")
+    st.balloons()
