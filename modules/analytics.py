@@ -1,15 +1,23 @@
 # modules/analytics.py
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
+import numpy as np
+import plotly.graph_objects as go
 from datetime import timedelta
 
-def analytics_app():
-    st.markdown("## Simulación Realista de Inventario")
-    st.markdown("*Reorden automático cuando stock ≤ PR (en unidades)*")
+# === PALETA AZUL (TU ESTILO) ===
+COLOR_VENTAS = "#4361EE"        # Azul fuerte
+COLOR_PREDICCION = "#4CC9F0"    # Cian
+COLOR_STOCK_HIST = "#7209B7"    # Violeta oscuro
+COLOR_STOCK_FUT = "#4CC9F0"     # Cian
+COLOR_PR = "#FF6B6B"            # Rojo suave
+COLOR_ORDEN = "#2ECC71"         # Verde
 
-    # --- Verificar datos ---
+def analytics_app():
+    st.title("Simulación Completa de Inventario")
+    st.markdown("**Pasado + Futuro: ¿Cuándo habrías pedido?**")
+
+    # === 1. DATOS ===
     if st.session_state.df_ventas is None:
         st.warning("Sube datos de ventas en **Optimización de Inventario**.")
         return
@@ -24,13 +32,13 @@ def analytics_app():
         st.error("No hay resultados válidos.")
         return
 
-    # --- Filtros ---
+    # === 2. FILTROS ===
     col1, col2 = st.columns(2)
     with col1:
-        periodo = st.selectbox(
+        filtro = st.selectbox(
             "Período",
             ["Últimos 3 meses", "Últimos 6 meses", "Todo el año"],
-            key="analytics_periodo"
+            key="analytics_filtro"
         )
     with col2:
         producto = st.selectbox(
@@ -39,119 +47,137 @@ def analytics_app():
             key="analytics_producto"
         )
 
-    # --- Parámetros del sidebar ---
-    lead_time = st.session_state.get('analytics_lead_time', 7)
-    stock_seguridad = st.session_state.get('analytics_stock_seguridad', 3)
-    frecuencia = st.session_state.get('analytics_frecuencia', 7)
-
-    st.caption(
-        f"**Configuración**: Lead Time = {lead_time} días | "
-        f"Stock de Seguridad = {stock_seguridad} días | "
-        f"Estacionalidad = {frecuencia} días"
-    )
-
-    # --- Datos del producto ---
-    r = ok[ok['producto'] == producto].iloc[0].to_dict()
-    pr = r['punto_reorden']
-    cantidad_pedir = r['cantidad_a_ordenar']
-    pronostico = r['pronostico_diario_promedio']
-
-    # --- Stock inicial ---
-    stock_inicial = 0.0
-    if st.session_state.inventario_df is not None:
-        row = st.session_state.inventario_df[st.session_state.inventario_df['Producto'] == producto]
-        if not row.empty:
-            stock_inicial = float(row['Stock Actual'].iloc[0])
-
-    # --- Mostrar métricas ---
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("Stock Inicial", f"{stock_inicial:.0f}")
-    with col2:
-        st.metric("PR (unidades)", f"{pr:.0f}")
-    st.info(f"**Pide {cantidad_pedir:.0f} unidades cuando stock ≤ {pr:.0f}**")
-
-    # --- TRAZABILIDAD (GRÁFICA ORIGINAL) ---
+    # === 3. FILTRAR DATOS ===
     df_ventas = st.session_state.df_ventas_trazabilidad
-    df_stock = st.session_state.df_stock_trazabilidad
+    ultimo_dia = df_ventas['fecha'].max()
 
-    # Filtrar por producto
-    ventas_prod = df_ventas[df_ventas['producto'] == producto].copy()
-    stock_prod = df_stock[df_stock['producto'] == producto].copy()
+    if filtro == "Últimos 3 meses":
+        fecha_inicio = ultimo_dia - timedelta(days=90)
+    elif filtro == "Últimos 6 meses":
+        fecha_inicio = ultimo_dia - timedelta(days=180)
+    else:
+        fecha_inicio = df_ventas['fecha'].min()
 
-    # Rango completo
-    fecha_min = ventas_prod['fecha'].min()
-    fecha_max = ventas_prod['fecha'].max()
-    fechas = pd.date_range(fecha_min, fecha_max, freq='D')
+    df_filtrado = df_ventas[df_ventas['fecha'] >= fecha_inicio].copy()
+    ventas_prod = df_filtrado[df_filtrado['producto'] == producto].copy()
+    ventas_prod['dia_semana'] = ventas_prod['fecha'].dt.day_name()
 
-    # Simular inventario día a día
-    inventario = []
-    stock_actual = stock_inicial
-    orden_pendiente = None  # (fecha_entrega, cantidad)
+    # === 4. ESTACIONALIDAD: VENTA PROMEDIO POR DÍA DE SEMANA ===
+    venta_por_dia = ventas_prod.groupby('dia_semana')['cantidad_vendida'].mean().reindex([
+        'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
+    ]).fillna(0)
 
-    for fecha in fechas:
-        fecha_str = fecha.strftime('%Y-%m-%d')
-
-        # 1. Recibir stock si llega
-        if orden_pendiente and orden_pendiente[0] == fecha:
-            stock_actual += orden_pendiente[1]
-            orden_pendiente = None
-
-        # 2. Vender
-        venta = ventas_prod[ventas_prod['fecha'] == fecha_str]['cantidad_vendida'].sum()
-        stock_actual -= venta
-
-        # 3. Reorden si ≤ PR y no hay orden pendiente
-        if stock_actual <= pr and orden_pendiente is None:
-            fecha_entrega = fecha + timedelta(days=lead_time)
-            orden_pendiente = (fecha_entrega, cantidad_pedir)
-
-        # 4. Recibir stock programado
-        recepcion = stock_prod[stock_prod['fecha'] == fecha_str]['cantidad_recibida'].sum()
-        stock_actual += recepcion
-
-        inventario.append({
-            'fecha': fecha,
-            'stock': max(0, stock_actual),
-            'venta': venta,
-            'recepcion': recepcion,
-            'orden': 1 if (orden_pendiente and orden_pendiente[0] == fecha) else 0
+    # Si pocos datos → usar patrón realista
+    if len(ventas_prod) < 14:
+        base = venta_por_dia.mean() or 10
+        venta_por_dia = pd.Series({
+            'Monday': base * 0.8, 'Tuesday': base * 0.9, 'Wednesday': base * 0.95,
+            'Thursday': base * 1.0, 'Friday': base * 1.2, 'Saturday': base * 1.3, 'Sunday': base * 1.1
         })
 
-    df_sim = pd.DataFrame(inventario)
+    # === 5. PR = 3 DÍAS DE VENTA PROMEDIO ===
+    PR = venta_por_dia.mean() * 3
+    PR = max(PR, 1)
 
-    # --- GRÁFICA ORIGINAL (exactamente como antes) ---
-    fig, ax = plt.subplots(figsize=(12, 6))
+    # === 6. CANTIDAD A ORDENAR (2x PR o mínimo 50) ===
+    cantidad_orden = max(PR * 2, 50)
 
-    # Línea de stock
-    ax.plot(df_sim['fecha'], df_sim['stock'], label='Stock', color='blue', linewidth=2)
+    # === 7. SIMULACIÓN COMPLETA (HISTÓRICO + FUTURO) ===
+    fechas = list(df_filtrado['fecha'].unique()) + list(pd.date_range(ultimo_dia + timedelta(days=1), periods=7))
+    stock_simulado = []
+    fechas_simuladas = []
+    stock_actual = PR + cantidad_orden  # Stock inicial seguro
 
-    # Ventas (barras negativas)
-    ax.bar(df_sim['fecha'], -df_sim['venta'], label='Ventas', color='orange', alpha=0.6, width=0.8)
+    for fecha in fechas:
+        if fecha <= ultimo_dia:
+            # HISTÓRICO: venta real
+            venta = ventas_prod[ventas_prod['fecha'] == fecha]['cantidad_vendida'].sum()
+        else:
+            # FUTURO: predicción
+            venta = venta_por_dia[pd.Timestamp(fecha).day_name()]
 
-    # Recepciones (barras positivas)
-    recepciones = df_sim[df_sim['recepcion'] > 0]
-    ax.bar(recepciones['fecha'], recepciones['recepcion'], label='Recepción', color='green', alpha=0.8, width=0.8)
+        # REORDEN: si stock ≤ PR
+        if stock_actual <= PR:
+            stock_actual += cantidad_orden
 
-    # Punto de Reorden
-    ax.axhline(y=pr, color='red', linestyle='--', label=f'PR = {pr:.0f}', linewidth=2)
+        stock_actual = max(stock_actual - venta, 0)
+        stock_simulado.append(stock_actual)
+        fechas_simuladas.append(fecha)
 
-    # Lead Time (sombreado desde orden hasta entrega)
-    if orden_pendiente:
-        fecha_orden = df_sim[df_sim['stock'] <= pr].iloc[0]['fecha']
-        fecha_entrega = fecha_orden + timedelta(days=lead_time)
-        ax.axvspan(fecha_orden, fecha_entrega, color='gray', alpha=0.2, label='Lead Time')
+    df_sim = pd.DataFrame({'fecha': fechas_simuladas, 'stock': stock_simulado})
 
-    ax.set_title(f"Trazabilidad: {producto}", fontsize=16, fontweight='bold')
-    ax.set_ylabel("Unidades")
-    ax.set_xlabel("Fecha")
-    ax.legend()
-    ax.grid(True, alpha=0.3)
+    # === 8. GRÁFICA CON PLOTLY (TU ESTILO ORIGINAL) ===
+    fig = go.Figure()
 
-    # Formato de fechas
-    ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d'))
-    ax.xaxis.set_major_locator(mdates.WeekdayLocator(interval=1))
-    plt.xticks(rotation=45)
+    # Ventas históricas
+    df_hist = df_sim[df_sim['fecha'] <= ultimo_dia]
+    fig.add_trace(go.Bar(
+        x=df_hist['fecha'], y=ventas_prod[ventas_prod['fecha'].isin(df_hist['fecha'])]['cantidad_vendida'],
+        name="Ventas",
+        marker_color=COLOR_VENTAS,
+        yaxis='y'
+    ))
 
-    plt.tight_layout()
-    st.pyplot(fig)
+    # Predicción futura
+    futuro = pd.date_range(ultimo_dia + timedelta(days=1), periods=7)
+    prediccion = [venta_por_dia[f.day_name()] for f in futuro]
+    fig.add_trace(go.Scatter(
+        x=futuro, y=prediccion,
+        mode='lines+markers', name='Predicción',
+        line=dict(color=COLOR_PREDICCION, width=3),
+        fill='tonexty', fillcolor='rgba(76, 201, 240, 0.2)',
+        yaxis='y'
+    ))
+
+    # Stock histórico
+    fig.add_trace(go.Scatter(
+        x=df_hist['fecha'], y=df_hist['stock'],
+        mode='lines', name='Stock Simulado (Pasado)',
+        line=dict(color=COLOR_STOCK_HIST, width=2, dash='dot'),
+        yaxis='y2'
+    ))
+
+    # Stock futuro
+    df_fut = df_sim[df_sim['fecha'] > ultimo_dia]
+    fig.add_trace(go.Scatter(
+        x=df_fut['fecha'], y=df_fut['stock'],
+        mode='lines+markers', name='Stock Simulado (Futuro)',
+        line=dict(color=COLOR_STOCK_FUT, width=3),
+        yaxis='y2'
+    ))
+
+    # PR
+    fig.add_hline(y=PR, line_dash="dash", line_color=COLOR_PR,
+                  annotation_text=f"PR = {PR:.0f} unidades", annotation_position="top left")
+
+    # Órdenes
+    ordenes = df_sim[df_sim['stock'].diff() > cantidad_orden * 0.8]
+    if not ordenes.empty:
+        fig.add_trace(go.Scatter(
+            x=ordenes['fecha'], y=ordenes['stock'],
+            mode='markers', name='Reorden',
+            marker=dict(color=COLOR_ORDEN, size=12, symbol='triangle-up'),
+            yaxis='y2'
+        ))
+
+    # Layout
+    fig.update_layout(
+        title=f"{producto}: Stock Sube y Baja con Reorden Automático",
+        xaxis_title="Fecha",
+        yaxis=dict(title="Ventas", side="left"),
+        yaxis2=dict(title="Stock (unidades)", overlaying="y", side="right"),
+        hovermode='x unified',
+        template="plotly_white",
+        height=620,
+        legend=dict(x=0, y=1.1, orientation="h")
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    # === 9. KPIs ===
+    col1, col2, col3 = st.columns(3)
+    with col1: st.metric("PR (unidades)", f"{PR:.0f}")
+    with col2: st.metric("Cantidad a Pedir", f"{cantidad_orden:.0f}")
+    with col3: st.metric("Stock Inicial", f"{PR + cantidad_orden:.0f}")
+
+    st.success(f"**Pide {cantidad_orden:.0f} unidades** cuando stock ≤ **{PR:.0f}**")
