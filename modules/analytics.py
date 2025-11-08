@@ -132,11 +132,47 @@ def analytics_app():
         line=dict(color=COLOR_VENTAS, width=3),
         yaxis='y'
     ))
+    # === 9. SIMULACIÓN + REGISTRO DE ÓRDENES ===
+    fechas = list(df_filtrado['fecha'].unique()) + list(pd.date_range(ultimo_dia + timedelta(days=1), periods=7))
+    stock_simulado = []
+    fechas_simuladas = []
+    ordenes = []  # ← Guardar (fecha_orden, fecha_entrega)
+    stock_actual = PR + cantidad_orden
+
+    for fecha in fechas:
+        if fecha <= ultimo_dia:
+            venta = ventas_prod[ventas_prod['fecha'] == fecha]['cantidad_vendida'].sum()
+        else:
+            venta = venta_por_dia[pd.Timestamp(fecha).day_name()]
+
+        # REORDEN
+        if stock_actual <= PR:
+            fecha_entrega = fecha + timedelta(days=lead_time)
+            ordenes.append((fecha, fecha_entrega))
+            stock_actual += cantidad_orden
+
+        stock_actual = max(stock_actual - venta, 0)
+        stock_simulado.append(stock_actual)
+        fechas_simuladas.append(fecha)
+
+    df_sim = pd.DataFrame({'fecha': fechas_simuladas, 'stock': stock_simulado})
+
+    # === 10. GRÁFICA CON SOMBREADO LEAD TIME ===
+    fig = go.Figure()
+
+    # Ventas históricas
+    df_hist = df_sim[df_sim['fecha'] <= ultimo_dia]
+    ventas_hist = ventas_prod.groupby('fecha')['cantidad_vendida'].sum().reindex(df_hist['fecha']).fillna(0)
+    fig.add_trace(go.Scatter(
+        x=ventas_hist.index, y=ventas_hist.values,
+        mode='lines', name='Ventas Reales',
+        line=dict(color=COLOR_VENTAS, width=3),
+        yaxis='y'
+    ))
 
     # Predicción
     futuro = pd.date_range(ultimo_dia + timedelta(days=1), periods=7)
     prediccion = [venta_por_dia[f.day_name()] for f in futuro]
-
     fig.add_trace(go.Scatter(
         x=futuro, y=prediccion,
         mode='lines+markers', name='Predicción',
@@ -167,11 +203,23 @@ def analytics_app():
     fig.add_hline(y=PR, line_dash="dash", line_color=COLOR_PR,
                   annotation_text=f"PR = {PR:.0f} unidades", annotation_position="top left")
 
-    # Órdenes
-    ordenes = df_sim[df_sim['stock'].diff() > cantidad_orden * 0.8]
-    if not ordenes.empty:
+    # === SOMBREADO LEAD TIME ===
+    for i, (fecha_orden, fecha_entrega) in enumerate(ordenes):
+        if fecha_entrega <= fechas[-1]:  # Solo si está en rango
+            fig.add_vrect(
+                x0=fecha_orden, x1=fecha_entrega,
+                fillcolor="gray", opacity=0.15,
+                layer="below", line_width=0,
+                annotation_text=f"LT: {lead_time} días" if i == 0 else "",
+                annotation_position="top left" if i == 0 else None
+            )
+
+    # === MARCAS DE REORDEN ===
+    if ordenes:
+        fechas_orden = [o[0] for o in ordenes]
+        stock_en_orden = df_sim[df_sim['fecha'].isin(fechas_orden)]['stock']
         fig.add_trace(go.Scatter(
-            x=ordenes['fecha'], y=ordenes['stock'],
+            x=fechas_orden, y=stock_en_orden,
             mode='markers', name='Reorden',
             marker=dict(color=COLOR_ORDEN, size=14, symbol='triangle-up'),
             yaxis='y2'
@@ -189,8 +237,7 @@ def analytics_app():
         legend=dict(x=0, y=1.1, orientation="h")
     )
 
-    # === MOSTRAR GRÁFICA (CORREGIDO) ===
-    st.plotly_chart(fig, width='stretch')  # ← NUEVA API
+    st.plotly_chart(fig, width='stretch')
 
     # === KPIs ===
     col1, col2, col3 = st.columns(3)
