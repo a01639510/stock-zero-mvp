@@ -238,7 +238,50 @@ def analytics_app():
         'Tradicional Stock': [round(s, 1) for s in stock_trad_semanales]
     })
 
-    # === 3. GRÁFICA DE BARRAS AGRUPADAS ===
+    # === GRÁFICA DE BARRAS: VENTAS vs STOCK (SEMANAL) ===
+    st.markdown("---")
+    st.markdown("### Ventas vs Stock Promedio (por Semana)")
+
+    semanas = 12
+    fechas_sim = pd.date_range(ultimo_dia - timedelta(days=7*semanas), periods=7*semanas, freq='D')
+    ventas_semanales = []
+    stock_nuestro_semanales = []
+    stock_trad_semanales = []
+
+    # === SISTEMA TRADICIONAL: REORDEN FIJO CADA 7 DÍAS ===
+    stock_trad = 0
+    proximo_pedido = fechas_sim[0]  # Primer día de la simulación
+
+    for i in range(0, len(fechas_sim), 7):
+        semana = fechas_sim[i:i+7]
+        venta_semana = sum(venta_por_dia[pd.Timestamp(d).day_name()] for d in semana)
+        ventas_semanales.append(venta_semana)
+
+        # --- NUESTRO SISTEMA ---
+        stock_nuestro_semana = df_sim[df_sim['fecha'].isin(semana)]['stock'].mean() if not df_sim.empty else PR + cantidad_orden
+        stock_nuestro_semanales.append(stock_nuestro_semana)
+
+        # --- TRADICIONAL: REORDEN FIJO ---
+        # ¿Llega pedido esta semana?
+        if semana[0] >= proximo_pedido:
+            stock_trad += 300  # Llega el pedido
+            proximo_pedido = semana[0] + timedelta(days=7)  # Próximo en 7 días
+
+        # Se consume la venta
+        stock_trad = max(stock_trad - venta_semana, 0)
+
+        # Guardar stock promedio de la semana (después de consumo)
+        stock_trad_semanales.append(stock_trad)
+
+    # === DATAFRAME ===
+    df_semanal = pd.DataFrame({
+        'Semana': [f"S{i+1}" for i in range(semanas)],
+        'Ventas': [round(v, 1) for v in ventas_semanales],
+        'Nuestro Stock': [round(s, 1) for s in stock_nuestro_semanales],
+        'Tradicional Stock': [round(s, 1) for s in stock_trad_semanales]
+    })
+
+    # === GRÁFICA ===
     fig_barras = go.Figure(data=[
         go.Bar(name='Ventas', x=df_semanal['Semana'], y=df_semanal['Ventas'], marker_color='#4361EE'),
         go.Bar(name='Nuestro Stock', x=df_semanal['Semana'], y=df_semanal['Nuestro Stock'], marker_color='#4CC9F0'),
@@ -247,21 +290,20 @@ def analytics_app():
 
     fig_barras.update_layout(
         barmode='group',
-        title="Ventas vs Stock Promedio por Semana",
+        title="Ventas vs Stock Promedio por Semana (Reorden Fijo Cada 7 Días)",
         xaxis_title="Semana",
         yaxis_title="Unidades",
         template="plotly_white",
         height=500,
         legend=dict(x=0.7, y=1.1, orientation="h")
     )
-
     st.plotly_chart(fig_barras, width='stretch')
 
-    # === 4. RESUMEN ===
+    # === RESUMEN ===
     exceso_promedio = df_semanal['Tradicional Stock'].mean() - df_semanal['Nuestro Stock'].mean()
     st.info(f"**Stock promedio tradicional**: {df_semanal['Tradicional Stock'].mean():.1f} unidades\n\n"
             f"**Stock promedio nuestro**: {df_semanal['Nuestro Stock'].mean():.1f} unidades\n\n"
-            f"**Exceso de stock evitado**: {exceso_promedio:.1f} unidades por semana")
+            f"**Exceso evitado**: {exceso_promedio:.1f} unidades/semana")
     # === COSTOS DE RESTAURANTE ===
     costo_pedido = 25          # $25 por entrega (repartidor)
     costo_holding_diario = 0.015  # 1.5% del valor del producto por día
