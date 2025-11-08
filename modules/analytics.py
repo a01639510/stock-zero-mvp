@@ -6,8 +6,8 @@ import plotly.graph_objects as go
 from datetime import timedelta
 
 # === PALETA AZUL (TU ESTILO) ===
-COLOR_VENTAS = "#4361EE"
-COLOR_PREDICCION = "#4CC9F0"
+COLOR_VENTAS = "#4361EE"        # Azul fuerte
+COLOR_PREDICCION = "#4361EE"    # MISMO COLOR, pero punteado
 COLOR_STOCK_HIST = "#7209B7"
 COLOR_STOCK_FUT = "#4CC9F0"
 COLOR_PR = "#FF6B6B"
@@ -39,10 +39,12 @@ def analytics_app():
     with col2:
         producto = st.selectbox("Producto", ok['producto'].tolist(), key="analytics_producto")
 
-    # === 3. PARÁMETROS DEL SIDEBAR (AHORA SÍ SE USAN) ===
+    # === 3. PARÁMETROS DEL SIDEBAR (AHORA SÍ SE USAN CORRECTAMENTE) ===
     lead_time = st.session_state.get('analytics_lead_time', 7)
     stock_seguridad_dias = st.session_state.get('analytics_stock_seguridad', 3)
-    frecuencia = st.session_state.get('analytics_frecuencia', 7)  # No se usa directamente, pero está
+
+    # ← MOSTRARLOS PARA DEBUG (opcional)
+    # st.caption(f"Debug: Lead Time = {lead_time}, Seguridad = {stock_seguridad_dias}")
 
     # === 4. FILTRAR DATOS ===
     df_ventas = st.session_state.df_ventas_trazabilidad
@@ -59,7 +61,7 @@ def analytics_app():
     ventas_prod = df_filtrado[df_filtrado['producto'] == producto].copy()
     ventas_prod['dia_semana'] = ventas_prod['fecha'].dt.day_name()
 
-    # === 5. ESTACIONALIDAD: VENTA PROMEDIO POR DÍA DE SEMANA ===
+    # === 5. ESTACIONALIDAD ===
     venta_por_dia = ventas_prod.groupby('dia_semana')['cantidad_vendida'].mean().reindex([
         'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
     ]).fillna(0)
@@ -71,23 +73,22 @@ def analytics_app():
             'Thursday': base * 1.0, 'Friday': base * 1.2, 'Saturday': base * 1.3, 'Sunday': base * 1.1
         })
 
-    # === 6. DEMANDA PROMEDIO DIARIA ===
     demanda_diaria = venta_por_dia.mean()
 
-    # === 7. PR = Demanda durante Lead Time + Stock de Seguridad ===
+    # === 6. PR = (demanda × lead_time) + (demanda × stock_seguridad) ===
     demanda_lead_time = demanda_diaria * lead_time
     stock_seguridad = demanda_diaria * stock_seguridad_dias
     PR = demanda_lead_time + stock_seguridad
     PR = max(PR, 1)
 
-    # === 8. CANTIDAD A ORDENAR (2x PR o mínimo 50) ===
+    # === 7. CANTIDAD A ORDENAR ===
     cantidad_orden = max(PR * 2, 50)
 
-    # === 9. SIMULACIÓN COMPLETA ===
+    # === 8. SIMULACIÓN ===
     fechas = list(df_filtrado['fecha'].unique()) + list(pd.date_range(ultimo_dia + timedelta(days=1), periods=7))
     stock_simulado = []
     fechas_simuladas = []
-    stock_actual = PR + cantidad_orden  # Stock inicial seguro
+    stock_actual = PR + cantidad_orden
 
     for fecha in fechas:
         if fecha <= ultimo_dia:
@@ -95,7 +96,6 @@ def analytics_app():
         else:
             venta = venta_por_dia[pd.Timestamp(fecha).day_name()]
 
-        # REORDEN: si stock ≤ PR
         if stock_actual <= PR:
             stock_actual += cantidad_orden
 
@@ -105,54 +105,69 @@ def analytics_app():
 
     df_sim = pd.DataFrame({'fecha': fechas_simuladas, 'stock': stock_simulado})
 
-    # === 10. GRÁFICA (TU ESTILO) ===
+    # === 9. GRÁFICA (LÍNEAS AZULES) ===
     fig = go.Figure()
 
-    # Ventas históricas
+    # === VENTAS HISTÓRICAS: LÍNEA AZUL SÓLIDA ===
     df_hist = df_sim[df_sim['fecha'] <= ultimo_dia]
-    ventas_hist = ventas_prod[ventas_prod['fecha'].isin(df_hist['fecha'])]['cantidad_vendida']
-    fig.add_trace(go.Bar(
-        x=df_hist['fecha'], y=ventas_hist,
-        name="Ventas", marker_color=COLOR_VENTAS, yaxis='y'
+    ventas_hist = ventas_prod.groupby('fecha')['cantidad_vendida'].sum().reindex(df_hist['fecha']).fillna(0)
+
+    fig.add_trace(go.Scatter(
+        x=ventas_hist.index, y=ventas_hist.values,
+        mode='lines', name='Ventas Reales',
+        line=dict(color=COLOR_VENTAS, width=3),
+        yaxis='y'
     ))
 
-    # Predicción
+    # === PREDICCIÓN: LÍNEA AZUL PUNTEADA ===
     futuro = pd.date_range(ultimo_dia + timedelta(days=1), periods=7)
     prediccion = [venta_por_dia[f.day_name()] for f in futuro]
+
     fig.add_trace(go.Scatter(
-        x=futuro, y=prediccion, mode='lines+markers', name='Predicción',
-        line=dict(color=COLOR_PREDICCION, width=3), fill='tonexty', fillcolor='rgba(76, 201, 240, 0.2)', yaxis='y'
+        x=futuro, y=prediccion,
+        mode='lines+markers', name='Predicción',
+        line=dict(color=COLOR_PREDICCION, width=3, dash='dot'),
+        marker=dict(size=6),
+        yaxis='y'
     ))
 
-    # Stock histórico
+    # === STOCK HISTÓRICO ===
     fig.add_trace(go.Scatter(
-        x=df_hist['fecha'], y=df_hist['stock'], mode='lines', name='Stock Simulado (Pasado)',
-        line=dict(color=COLOR_STOCK_HIST, width=2, dash='dot'), yaxis='y2'
+        x=df_hist['fecha'], y=df_hist['stock'],
+        mode='lines', name='Stock (Pasado)',
+        line=dict(color=COLOR_STOCK_HIST, width=2, dash='dot'),
+        yaxis='y2'
     ))
 
-    # Stock futuro
+    # === STOCK FUTURO ===
     df_fut = df_sim[df_sim['fecha'] > ultimo_dia]
     fig.add_trace(go.Scatter(
-        x=df_fut['fecha'], y=df_fut['stock'], mode='lines+markers', name='Stock Simulado (Futuro)',
-        line=dict(color=COLOR_STOCK_FUT, width=3), yaxis='y2'
+        x=df_fut['fecha'], y=df_fut['stock'],
+        mode='lines+markers', name='Stock (Futuro)',
+        line=dict(color=COLOR_STOCK_FUT, width=3),
+        marker=dict(size=6),
+        yaxis='y2'
     ))
 
-    # PR
+    # === PR ===
     fig.add_hline(y=PR, line_dash="dash", line_color=COLOR_PR,
                   annotation_text=f"PR = {PR:.0f} unidades", annotation_position="top left")
 
-    # Órdenes
+    # === ÓRDENES ===
     ordenes = df_sim[df_sim['stock'].diff() > cantidad_orden * 0.8]
     if not ordenes.empty:
         fig.add_trace(go.Scatter(
-            x=ordenes['fecha'], y=ordenes['stock'], mode='markers', name='Reorden',
-            marker=dict(color=COLOR_ORDEN, size=12, symbol='triangle-up'), yaxis='y2'
+            x=ordenes['fecha'], y=ordenes['stock'],
+            mode='markers', name='Reorden',
+            marker=dict(color=COLOR_ORDEN, size=14, symbol='triangle-up'),
+            yaxis='y2'
         ))
 
+    # === LAYOUT ===
     fig.update_layout(
         title=f"{producto}: Stock Sube y Baja con Reorden Automático",
         xaxis_title="Fecha",
-        yaxis=dict(title="Ventas", side="left"),
+        yaxis=dict(title="Ventas (unidades)", side="left"),
         yaxis2=dict(title="Stock (unidades)", overlaying="y", side="right"),
         hovermode='x unified',
         template="plotly_white",
@@ -162,7 +177,7 @@ def analytics_app():
 
     st.plotly_chart(fig, use_container_width=True)
 
-    # === 11. KPIs (AHORA DINÁMICOS) ===
+    # === KPIs ===
     col1, col2, col3 = st.columns(3)
     with col1: st.metric("PR (unidades)", f"{PR:.0f}")
     with col2: st.metric("Cantidad a Pedir", f"{cantidad_orden:.0f}")
