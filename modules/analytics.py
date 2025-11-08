@@ -7,11 +7,11 @@ from datetime import timedelta
 
 # === PALETA AZUL (TU ESTILO) ===
 COLOR_VENTAS = "#4361EE"        # Azul fuerte
-COLOR_PREDICCION = "#4361EE"    # MISMO COLOR, pero punteado
-COLOR_STOCK_HIST = "#7209B7"
-COLOR_STOCK_FUT = "#4CC9F0"
-COLOR_PR = "#FF6B6B"
-COLOR_ORDEN = "#2ECC71"
+COLOR_PREDICCION = "#4361EE"    # Mismo color, punteado
+COLOR_STOCK_HIST = "#7209B7"    # Violeta oscuro
+COLOR_STOCK_FUT = "#4CC9F0"     # Cian
+COLOR_PR = "#FF6B6B"            # Rojo suave
+COLOR_ORDEN = "#2ECC71"         # Verde
 
 def analytics_app():
     st.title("Simulación Completa de Inventario")
@@ -22,6 +22,7 @@ def analytics_app():
         st.warning("Sube datos de ventas en **Optimización de Inventario**.")
         return
 
+   33
     if st.session_state.df_resultados is None:
         st.info("Primero calcula en **Optimización de Inventario**.")
         return
@@ -35,16 +36,21 @@ def analytics_app():
     # === 2. FILTROS ===
     col1, col2 = st.columns(2)
     with col1:
-        filtro = st.selectbox("Período", ["Últimos 3 meses", "Últimos 6 meses", "Todo el año"], key="analytics_filtro")
+        filtro = st.selectbox(
+            "Período",
+            ["Últimos 3 meses", "Últimos 6 meses", "Todo el año"],
+            key="analytics_filtro"
+        )
     with col2:
-        producto = st.selectbox("Producto", ok['producto'].tolist(), key="analytics_producto")
+        producto = st.selectbox(
+            "Producto",
+            ok['producto'].tolist(),
+            key="analytics_producto"
+        )
 
-    # === 3. PARÁMETROS DEL SIDEBAR (AHORA SÍ SE USAN CORRECTAMENTE) ===
+    # === 3. PARÁMETROS DEL SIDEBAR (DINÁMICOS) ===
     lead_time = st.session_state.get('analytics_lead_time', 7)
     stock_seguridad_dias = st.session_state.get('analytics_stock_seguridad', 3)
-
-    # ← MOSTRARLOS PARA DEBUG (opcional)
-    # st.caption(f"Debug: Lead Time = {lead_time}, Seguridad = {stock_seguridad_dias}")
 
     # === 4. FILTRAR DATOS ===
     df_ventas = st.session_state.df_ventas_trazabilidad
@@ -61,7 +67,7 @@ def analytics_app():
     ventas_prod = df_filtrado[df_filtrado['producto'] == producto].copy()
     ventas_prod['dia_semana'] = ventas_prod['fecha'].dt.day_name()
 
-    # === 5. ESTACIONALIDAD ===
+    # === 5. ESTACIONALIDAD (PROMEDIO POR DÍA DE SEMANA) ===
     venta_por_dia = ventas_prod.groupby('dia_semana')['cantidad_vendida'].mean().reindex([
         'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
     ]).fillna(0)
@@ -73,22 +79,32 @@ def analytics_app():
             'Thursday': base * 1.0, 'Friday': base * 1.2, 'Saturday': base * 1.3, 'Sunday': base * 1.1
         })
 
-    demanda_diaria = venta_por_dia.mean()
+    # === 6. TENDENCIA PONDERADA (EWMA) ===
+    ventas_diarias = ventas_prod.groupby('fecha')['cantidad_vendida'].sum().sort_index()
+    
+    if len(ventas_diarias) < 7:
+        demanda_base = ventas_diarias.mean()
+    else:
+        # EWMA: datos recientes pesan más (alpha=0.3)
+        demanda_ponderada = ventas_diarias.ewm(alpha=0.3, adjust=False).mean()
+        demanda_base = demanda_ponderada.iloc[-1]  # Último valor ponderado
 
-    # === 6. PR = (demanda × lead_time) + (demanda × stock_seguridad) ===
+    demanda_diaria = demanda_base
+
+    # === 7. PR = (demanda × lead_time) + (demanda × stock_seguridad) ===
     demanda_lead_time = demanda_diaria * lead_time
     stock_seguridad = demanda_diaria * stock_seguridad_dias
     PR = demanda_lead_time + stock_seguridad
     PR = max(PR, 1)
 
-    # === 7. CANTIDAD A ORDENAR ===
+    # === 8. CANTIDAD A ORDENAR ===
     cantidad_orden = max(PR * 2, 50)
 
-    # === 8. SIMULACIÓN ===
+    # === 9. SIMULACIÓN COMPLETA ===
     fechas = list(df_filtrado['fecha'].unique()) + list(pd.date_range(ultimo_dia + timedelta(days=1), periods=7))
     stock_simulado = []
     fechas_simuladas = []
-    stock_actual = PR + cantidad_orden
+    stock_actual = PR + cantidad_orden  # Stock inicial seguro
 
     for fecha in fechas:
         if fecha <= ultimo_dia:
@@ -96,6 +112,7 @@ def analytics_app():
         else:
             venta = venta_por_dia[pd.Timestamp(fecha).day_name()]
 
+        # REORDEN: si stock ≤ PR
         if stock_actual <= PR:
             stock_actual += cantidad_orden
 
@@ -105,7 +122,7 @@ def analytics_app():
 
     df_sim = pd.DataFrame({'fecha': fechas_simuladas, 'stock': stock_simulado})
 
-    # === 9. GRÁFICA (LÍNEAS AZULES) ===
+    # === 10. GRÁFICA (LÍNEAS AZULES) ===
     fig = go.Figure()
 
     # === VENTAS HISTÓRICAS: LÍNEA AZUL SÓLIDA ===
@@ -177,7 +194,7 @@ def analytics_app():
 
     st.plotly_chart(fig, use_container_width=True)
 
-    # === KPIs ===
+    # === 11. KPIs ===
     col1, col2, col3 = st.columns(3)
     with col1: st.metric("PR (unidades)", f"{PR:.0f}")
     with col2: st.metric("Cantidad a Pedir", f"{cantidad_orden:.0f}")
