@@ -307,13 +307,14 @@ if pagina == "Optimización de Inventario":
 # === CONTROL DE INVENTARIO BÁSICO ===
 elif pagina == "Control de Inventario Básico":
     inventario_basico_app()
-
-# === ANÁLISIS (NUEVA PÁGINA) ===
+# === ANÁLISIS ===
 elif pagina == "Análisis":
-    if ANALYTICS_AVAILABLE:
+    try:
+        from modules.analytics import analytics_app
         analytics_app()
-    else:
-        st.error("Módulo `analytics.py` no encontrado")
+    except Exception as e:
+        st.error("Error al cargar Análisis")
+        st.code(f"{e}")
 
 # === RECETAS ===
 elif pagina == "Recetas y Productos":
