@@ -143,8 +143,12 @@ with st.sidebar:
     # === CONFIGURACIÓN COMPARTIDA ===
     if pagina in ["Optimización de Inventario", "Análisis"]:
         st.markdown("### Configuración")
-        lead_time = st.slider("Lead Time (días)", 1, 30, 7)
-        stock_seguridad = st.slider("Stock de Seguridad (días)", 1, 10, 3)
+        lead_time = st.slider("Lead Time (días)", 1, 30, 7, key="lt")
+        stock_seguridad = st.slider("Stock de Seguridad (días)", 1, 10, 3, key="ss")
+
+        # ← GUARDAR EN SESSION_STATE
+        st.session_state.analytics_lead_time = lead_time
+        st.session_state.analytics_stock_seguridad = stock_seguridad
         frecuencia = st.selectbox(
             "Estacionalidad", [7, 14, 30], index=0,
             format_func=lambda x: f"{x} días ({'Semanal' if x==7 else 'Quincenal' if x==14 else 'Mensual'})"
