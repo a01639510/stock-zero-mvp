@@ -90,7 +90,7 @@ def inventario_basico_app():
         return 
 
     # Sincronización de datos (si hay resultados)
-    if 'df_resultados' in st.session_state:
+    if 'df_resultados' in st.session_state and st.session_state['df_resultados'] is not None and not st.session_state['df_resultados'].empty:
         df_inventario = sincronizar_puntos_optimos(df_inventario, st.session_state['df_resultados'])
         st.session_state['inventario_df'] = df_inventario
 
