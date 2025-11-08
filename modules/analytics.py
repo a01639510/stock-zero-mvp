@@ -234,6 +234,8 @@ def analytics_app():
 
     ahorro = costos_trad['total'] - costos_nuestro['total']
     st.success(f"**Ahorro anual: ${ahorro:,.0f}**")
+    ahorro_mensual = ahorro/12
+    st.success(f"**Ahorro mensual: ${ahorro_mensual:,.0f}**")
 
     # === GRÁFICA DE BARRAS SEMANAL ===
     st.markdown("---")
@@ -246,15 +248,14 @@ def analytics_app():
     ventas_semanales = []
     stock_nuestro_semanales = []
     stock_trad_semanales = []
-
-    stock_trad = 150
+    stock_trad = 60
     stock_diario_trad = []
 
     for fecha in fechas_sim:
         fecha_dt = pd.Timestamp(fecha)
 
         if fecha_dt.weekday() == 0:  # Lunes
-            stock_trad += 300
+            stock_trad = stock_trad + 100 - venta_por_dia[fecha_dt.day_name()]
 
         venta_dia = venta_por_dia[fecha_dt.day_name()]
         stock_trad = max(stock_trad - venta_dia, 0)
