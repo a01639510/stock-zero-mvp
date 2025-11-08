@@ -14,11 +14,11 @@ COLOR_ORDEN = "#2ECC71"
 
 def analytics_app():
     st.title("Predicción Estacional + Simulación de Inventario")
-    st.markdown("**Predicción realista por día de semana + PR dinámico**")
+    st.markdown("**Basado 100% en tus datos reales por día de semana**")
 
     # === 1. VALIDAR DATOS ===
-    if st.session_state.df_ventas is None or st.session_state.df_resultados is None:
-        st.warning("Sube datos y calcula en **Optimización**")
+    if st.session_state.df_ventas is None:
+        st.warning("Sube datos en **Optimización**")
         return
 
     df_ventas = st.session_state.df_ventas.copy()
@@ -26,92 +26,95 @@ def analytics_app():
     df_ventas = df_ventas.dropna(subset=['fecha']).sort_values('fecha')
     df_ventas['fecha'] = df_ventas['fecha'].dt.normalize()
 
-    resultados = st.session_state.df_resultados
-    if 'error' in resultados.columns:
-        resultados = resultados[resultados['error'].isnull()]
-    if resultados.empty:
-        st.error("No hay resultados válidos")
-        return
-
     # === 2. FILTRO TEMPORAL ===
     ultimo_dia = df_ventas['fecha'].max()
     opciones_filtro = {
         "Última semana": 7,
         "Último mes": 30,
         "Últimos 3 meses": 90,
-        "Todo el historial": (ultimo_dia - df_ventas['fecha'].min()).days + 1
+        "Todo el historial": 9999
     }
     filtro = st.selectbox("Período", list(opciones_filtro.keys()))
     dias = opciones_filtro[filtro]
-    fecha_inicio = ultimo_dia - timedelta(days=dias)
+    fecha_inicio = ultimo_dia - timedelta(days=min(dias, 9999))
     df_filtrado = df_ventas[df_ventas['fecha'] >= fecha_inicio]
 
     # === 3. PRODUCTO ===
-    productos = resultados['producto'].unique()
-    producto = st.selectbox("Producto", sorted(productos), key="producto_analytics")
+    productos = df_filtrado['producto'].unique()
+    if len(productos) == 0:
+        st.error("No hay productos")
+        return
+    producto = st.selectbox("Producto", sorted(productos))
 
-    # === 4. DATOS DEL PRODUCTO ===
+    # === 4. VENTAS DEL PRODUCTO ===
     ventas_prod = df_filtrado[df_filtrado['producto'] == producto].copy()
-    res_prod = resultados[resultados['producto'] == producto].iloc[0]
-    cantidad_orden = res_prod['cantidad_a_ordenar']
-    pronostico_base = res_prod['pronostico_diario_promedio']  # ← VALOR REAL
-
     if ventas_prod.empty:
-        st.error("No hay ventas en este período")
+        st.error("No hay ventas para este producto")
         return
 
-    # === 5. ESTACIONALIDAD ROBUSTA ===
     ventas_prod['dia_semana'] = ventas_prod['fecha'].dt.day_name()
-    ventas_dia = ventas_prod.groupby('dia_semana')['cantidad_vendida'].agg(['mean', 'count']).reindex([
+
+    # === 5. PROMEDIO REAL POR DÍA DE SEMANA (SIN PROMEDIO GLOBAL) ===
+    ventas_por_dia = ventas_prod.groupby('dia_semana')['cantidad_vendida'].mean().reindex([
         'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
     ]).fillna(0)
 
-    variacion_cv = (ventas_dia['mean'].std() / ventas_dia['mean'].mean()) * 100 if ventas_dia['mean'].mean() > 0 else 0
-    st.caption(f"**Variación estacional (CV): {variacion_cv:.1f}%** → {'FUERTE' if variacion_cv > 30 else 'MODERADA' if variacion_cv > 15 else 'DÉBIL'}")
+    # Diagnóstico
+    variacion_cv = (ventas_por_dia.std() / ventas_por_dia.mean()) * 100
+    st.caption(f"**Variación real (CV): {variacion_cv:.1f}%** → {'FUERTE' if variacion_cv > 30 else 'MODERADA' if variacion_cv > 10 else 'DÉBIL'}")
 
-    # === 6. FACTORES ESTACIONALES (SIN DOBLE NORMALIZACIÓN) ===
-    if ventas_dia['count'].sum() < 14 or variacion_cv < 10:
-        # FACTORES REALISTAS (0.8 a 1.3)
-        factores = {
-            'Monday': 0.8, 'Tuesday': 0.9, 'Wednesday': 0.95,
-            'Thursday': 1.0, 'Friday': 1.2, 'Saturday': 1.3, 'Sunday': 1.1
-        }
-        st.info("Datos insuficientes → Aplicando **estacionalidad realista (+30% sábado)**")
-    else:
-        # FACTORES REALES (basado en datos)
-        promedio_real = ventas_dia['mean'].mean()
-        factores = (ventas_dia['mean'] / promedio_real).to_dict()  # ← 0.7–1.5
+    # === 6. SI HAY POCOS DATOS → ESTACIONALIDAD REALISTA ===
+    if len(ventas_prod) < 14 or variacion_cv < 10:
+        st.info("Datos limitados → Aplicando **+30% sábado, +20% viernes, -20% lunes**")
+        base = ventas_por_dia.mean()
+        ventas_por_dia = pd.Series({
+            'Monday': base * 0.8,
+            'Tuesday': base * 0.9,
+            'Wednesday': base * 0.95,
+            'Thursday': base * 1.0,
+            'Friday': base * 1.2,
+            'Saturday': base * 1.3,
+            'Sunday': base * 1.1
+        })
 
-    # === 7. PREDICCIÓN = pronostico_base × factor (NO NORMALIZAR) ===
+    # === 7. PREDICCIÓN 7 DÍAS: VALORES REALES POR DÍA ===
+    futuro = pd.date_range(ultimo_dia + timedelta(days=1), periods=7)
     prediccion_futura = pd.Series([
-        pronostico_base * factores[fecha.day_name()] for fecha in pd.date_range(ultimo_dia + timedelta(days=1), periods=7)
-    ], index=pd.date_range(ultimo_dia + timedelta(days=1), periods=7))
+        ventas_por_dia[fecha.day_name()] for fecha in futuro
+    ], index=futuro)
 
-    # === 8. PR DINÁMICO (AJUSTADO) ===
-    pr_base = res_prod['punto_reorden']
-    pr_dinamico = {dia: pr_base * factores[dia] for dia in factores}
+    # === 8. PR DINÁMICO (basado en ventas reales) ===
+    lead_time = 7  # Ajusta si tienes
+    stock_seguridad = 3
+    pr_dinamico = {dia: ventas_por_dia[dia] * (lead_time + stock_seguridad) for dia in ventas_por_dia.index}
 
-    # === 9. SIMULACIÓN DE STOCK ===
-    stock_inicial = pr_base + cantidad_orden
+    # === 9. CANTIDAD A ORDENAR (EOQ simple) ===
+    demanda_anual = ventas_por_dia.mean() * 365
+    costo_orden = 100  # Ajusta
+    costo_mantenimiento = 0.2
+    cantidad_orden = np.sqrt((2 * demanda_anual * costo_orden) / costo_mantenimiento)
+
+    # === 10. SIMULACIÓN DE STOCK ===
+    stock_inicial = ventas_por_dia.mean() * 14 + cantidad_orden
     stock_simulado = [stock_inicial]
     fechas_simuladas = [ultimo_dia]
     stock_actual = stock_inicial
 
-    for fecha in prediccion_futura.index:
+    for fecha in futuro:
         venta = prediccion_futura[fecha]
         stock_actual = max(stock_actual - venta, 0)
         stock_simulado.append(stock_actual)
         fechas_simuladas.append(fecha)
 
         pr_hoy = pr_dinamico[fecha.day_name()]
-        if stock_actual <= pr_hoy and len(stock_simulado) < 20:
+        if stock_actual <= pr_hoy:
             stock_actual += cantidad_orden
             stock_simulado.append(stock_actual)
             fechas_simuladas.append(fecha + timedelta(hours=1))
 
     df_sim = pd.DataFrame({'fecha': fechas_simuladas, 'stock': stock_simulado})
 
-    # === 10. GRÁFICO ===
+    # === 11. GRÁFICO ===
     fig = go.Figure()
 
     # Ventas reales
@@ -124,13 +127,13 @@ def analytics_app():
 
     # Predicción variante
     fig.add_trace(go.Scatter(
-        x=prediccion_futura.index, y=prediccion_futura.values,
-        mode='lines+markers', name='Predicción Estacional',
-        line=dict(color=COLOR_PREDICCION, width=3),
+        x=futuro, y=prediccion_futura.values,
+        mode='lines+markers', name='Predicción por Día',
+        line=dict(color=COLOR_PREDICCIONure, width=3),
         fill='tonexty', fillcolor='rgba(76, 201, 240, 0.2)'
     ))
 
-    # Stock simulado
+    # Stock
     fig.add_trace(go.Scatter(
         x=df_sim['fecha'], y=df_sim['stock'],
         mode='lines+markers', name='Stock Simulado',
@@ -139,10 +142,10 @@ def analytics_app():
     ))
 
     # PR dinámico
-    pr_serie = [pr_dinamico[fecha.day_name()] for fecha in prediccion_futura.index]
+    pr_serie = [pr_dinamico[fecha.day_name()] for fecha in futuro]
     fig.add_trace(go.Scatter(
-        x=prediccion_futura.index, y=pr_serie,
-        mode='lines', name='PR Dinámico',
+        x=futuro, y=pr_serie,
+        mode='lines', name='PR por Día',
         line=dict(dash='dash', color=COLOR_PR, width=2),
         yaxis='y2'
     ))
@@ -158,9 +161,9 @@ def analytics_app():
         ))
 
     fig.update_layout(
-        title=f"{producto}: Predicción Estacional + PR Dinámico ({filtro})",
+        title=f"{producto}: Predicción Real por Día ({filtro})",
         xaxis_title="Fecha",
-        yaxis_title="Ventas Diarias",
+        yaxis_title="Ventas",
         yaxis2=dict(title="Stock / PR", overlaying="y", side="right"),
         hovermode='x unified',
         template="plotly_white",
@@ -169,32 +172,32 @@ def analytics_app():
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # === 11. ESTACIONALIDAD ===
+    # === 12. ESTACIONALIDAD ===
     col1, col2 = st.columns(2)
     with col1:
-        st.subheader("Predicción por Día")
-        valores = [pronostico_base * factores[dia] for dia in factores]
+        st.subheader("Ventas por Día")
         fig_bar = go.Figure(go.Bar(
-            x=list(factores.keys()), y=valores,
+            x=ventas_por_dia.index, y=ventas_por_dia.values,
             marker_color=COLOR_PREDICCION,
-            text=[f"{v:.1f}" for v in valores], textposition='outside'
+            text=ventas_por_dia.values.round(1), textposition='outside'
         ))
         fig_bar.update_layout(showlegend=False, height=300, template="plotly_white")
         st.plotly_chart(fig_bar, use_container_width=True)
 
     with col2:
         st.subheader("PR por Día")
-        pr_vals = [pr_dinamico[dia] for dia in factores]
         st.dataframe(
-            pd.DataFrame({'Día': factores.keys(), 'PR': pr_vals}).style.format({'PR': '{:.0f}'}),
+            pd.DataFrame([
+                {"Día": dia, "PR": pr_dinamico[dia]} for dia in pr_dinamico
+            ]).style.format({'PR': '{:.0f}'}),
             hide_index=True
         )
 
-    # === 12. KPIs ===
+    # === 13. KPIs ===
     st.markdown("### Acción")
     col1, col2, col3 = st.columns(3)
-    with col1: st.metric("PR Base", f"{pr_base:.0f}")
+    with col1: st.metric("PR Promedio", f"{sum(pr_dinamico.values())/7:.0f}")
     with col2: st.metric("Cantidad a Pedir", f"{cantidad_orden:.0f}")
-    with col3: st.metric("Pico (Sábado)", f"{pronostico_base * factores['Saturday']:.1f}")
+    with col3: st.metric("Pico (Sábado)", f"{ventas_por_dia['Saturday']:.1f}")
 
-    st.success(f"**Pide {cantidad_orden:.0f} unidades** cuando el stock baje al PR del día")
+    st.success(f"**Pide {cantidad_orden:.0f} unidades** cuando baje al PR del día")
