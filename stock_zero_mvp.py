@@ -59,9 +59,8 @@ DEFAULTS = {
     'df_ventas_trazabilidad': pd.DataFrame(columns=['fecha','producto','cantidad_vendida']),
     'df_stock_trazabilidad': pd.DataFrame(columns=['fecha','producto','cantidad_recibida']),
     'df_resultados': None,
-    'inventario_df': None  # ← Eliminamos ejemplo, se genera con datos reales
+    'inventario_df': None
 }
-
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
         st.session_state[k] = v
@@ -116,7 +115,7 @@ def procesar_csv(bytes_data, tipo):
     else:
         cols = {c.strip().lower():c for c in df.columns}
         req = ['fecha','producto','cantidad_recibida']
-        if not all(r in cols for r in req):
+        if not All(r in cols for r in req):
             return None
         df = df.rename(columns={cols[r]:r for r in req})[req].copy()
         df['fecha'] = pd.to_datetime(df['fecha'], errors='coerce')
@@ -132,28 +131,28 @@ with st.sidebar:
     st.title("Stock Zero")
     st.markdown("### Gestión de Inventario")
     st.markdown("---")
-
     opciones = ["Optimización de Inventario", "Control de Inventario Básico", "Análisis"]
     if RECIPES_AVAILABLE:
         opciones.append("Recetas y Productos")
-
     pagina = st.radio("Navegar", opciones, label_visibility="collapsed")
-
     st.markdown("---")
+    
+    # Configuración solo visible en Optimización
     if pagina == "Optimización de Inventario":
         st.markdown("### Configuración")
         lead_time = st.slider("Lead Time (días)", 1, 30, 7)
         stock_seguridad = st.slider("Stock de Seguridad (días)", 1, 10, 3)
-        frecuencia = st.selectbox("Estacionalidad", [7, 14, 30], index=0,
-                                 format_func=lambda x: f"{x} días ({'Semanal' if x==7 else 'Quincenal' if x==14 else 'Mensual'})")
+        frecuencia = st.selectbox(
+            "Estacionalidad", [7, 14, 30], index=0,
+            format_func=lambda x: f"{x} días ({'Semanal' if x==7 else 'Quincenal' if x==14 else 'Mensual'})"
+        )
     else:
-        lead_time, stock_seguridad, frecuencia = 7, 3, 7
+        lead_time, stock_seguridad, frecuencia = 7, 3, 7  # Valores por defecto si no se usan
 
     st.markdown("---")
     st.markdown("### Estado")
     st.caption(datetime.now().strftime('%d/%m/%Y'))
     st.caption("Usuario: Demo")
-
     st.markdown("### Datos")
     if st.session_state.df_ventas is not None:
         st.success(f"Ventas: {len(st.session_state.df_ventas)}")
@@ -163,7 +162,6 @@ with st.sidebar:
         st.info(f"Stock: {len(st.session_state.df_stock)}")
     else:
         st.info("Stock: No")
-
     st.markdown("---")
     if st.button("Resetear todo", type="secondary"):
         for k in list(st.session_state.keys()):
@@ -237,7 +235,6 @@ if pagina == "Optimización de Inventario":
     if st.session_state.df_ventas is None:
         st.info("Sube ventas para continuar")
         st.stop()
-
     df_ventas = st.session_state.df_ventas
 
     # === REGENERAR INVENTARIO CON DATOS REALES ===
@@ -248,7 +245,6 @@ if pagina == "Optimización de Inventario":
     with c1: st.metric("Productos", df_ventas['producto'].nunique())
     with c2: st.metric("Registros", len(df_ventas))
     with c3: st.metric("Días", (df_ventas['fecha'].max() - df_ventas['fecha'].min()).days + 1)
-
     if len(df_ventas) < 30:
         st.warning("Menos de 30 días → pronóstico débil")
 
@@ -259,24 +255,38 @@ if pagina == "Optimización de Inventario":
         st.session_state.df_resultados = res
         st.rerun()
 
+    # === RESULTADOS CON CONFIGURACIÓN MOSTRADA ===
     if st.session_state.df_resultados is not None:
         ok = st.session_state.df_resultados[st.session_state.df_resultados['error'].isnull()]
         ok = ok.sort_values('cantidad_a_ordenar', ascending=False)
         st.markdown("---")
         st.markdown("## Resultados")
+
+        # AQUÍ ESTÁ EL CÓDIGO QUE QUERÍAS
+        st.caption(
+            f"Configuración aplicada: "
+            f"**Lead Time** = {lead_time} días | "
+            f"**Stock de Seguridad** = {stock_seguridad} días | "
+            f"**Estacionalidad** = {frecuencia} días"
+        )
+
         if not ok.empty:
             st.success(f"{len(ok)} productos")
             c1, c2 = st.columns(2)
             with c1: st.metric("PR total", f"{ok['punto_reorden'].sum():.0f}")
             with c2: st.metric("Ordenar", f"{ok['cantidad_a_ordenar'].sum():.0f}")
 
+            # Descarga Excel
             buf = io.BytesIO()
             with pd.ExcelWriter(buf, engine='openpyxl') as w:
                 ok[['producto','clasificacion_abc','punto_reorden','cantidad_a_ordenar']].to_excel(w, 'Recomendaciones', index=False)
                 ok.to_excel(w, 'Completo', index=False)
             buf.seek(0)
-            st.download_button("Descargar Excel", buf, f"stock_zero_{datetime.now():%Y%m%d}.xlsx",
-                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            st.download_button(
+                "Descargar Excel", buf,
+                f"stock_zero_{datetime.now():%Y%m%d}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
             st.markdown("### ABC")
             disp = ok[['producto','clasificacion_abc','punto_reorden','cantidad_a_ordenar']].copy()
@@ -292,6 +302,7 @@ if pagina == "Optimización de Inventario":
                 if not row.empty:
                     stock_act = float(row['Stock Actual'].iloc[0])
             st.info(f"Stock actual: **{stock_act:.2f}**")
+
             traz = calcular_trazabilidad_inventario(
                 st.session_state.df_ventas_trazabilidad,
                 st.session_state.df_stock_trazabilidad,
@@ -312,12 +323,10 @@ elif pagina == "Control de Inventario Básico":
 
 # === ANÁLISIS ===
 elif pagina == "Análisis":
-    try:
-        from modules.analytics import analytics_app
+    if ANALYTICS_AVAILABLE:
         analytics_app()
-    except Exception as e:
-        st.error("Error al cargar Análisis")
-        st.code(f"{e}")
+    else:
+        st.error("Módulo `analytics.py` no encontrado")
 
 # === RECETAS ===
 elif pagina == "Recetas y Productos":
