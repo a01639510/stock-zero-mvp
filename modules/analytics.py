@@ -240,7 +240,7 @@ def analytics_app():
     # === GRÁFICA DE BARRAS SEMANAL ===
     st.markdown("---")
     st.markdown("### Ventas vs Stock Promedio por Semana")
-    st.caption("Tradicional: 300 unidades cada lunes. Nuestro: PR dinámico.")
+    st.caption("Tradicional: 60 unidades cada lunes. Nuestro: PR dinámico.")
 
     semanas = 12
     fechas_sim = pd.date_range(ultimo_dia - timedelta(days=7*semanas), periods=7*semanas, freq='D')
@@ -255,7 +255,7 @@ def analytics_app():
         fecha_dt = pd.Timestamp(fecha)
 
         if fecha_dt.weekday() == 0:  # Lunes
-            stock_trad = stock_trad + 100 - venta_por_dia[fecha_dt.day_name()]
+            stock_trad = + 60 - venta_por_dia[fecha_dt.day_name()]
 
         venta_dia = venta_por_dia[fecha_dt.day_name()]
         stock_trad = max(stock_trad - venta_dia, 0)
