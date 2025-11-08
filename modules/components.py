@@ -1,51 +1,33 @@
 # modules/components.py
-
-import streamlit as st
+# modules/components.py
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-from datetime import datetime
-from typing import Dict, List, Union
+import streamlit as st
 
-# ============================================
-# FUNCIONES AUXILIARES
-# ============================================
-
-def generar_inventario_base(df_ventas: pd.DataFrame = None, use_example_data: bool = False) -> pd.DataFrame:
-    """Genera un DataFrame base para el inventario, usando productos de ventas o datos de ejemplo."""
-    productos_de_ventas = []
-    if df_ventas is not None:
-        productos_de_ventas = sorted(df_ventas['producto'].unique().tolist())
-        
-    if use_example_data and not productos_de_ventas:
-        productos_base = ['Café en Grano (Kg)', 'Leche Entera (Litros)', 'Pan Hamburguesa (Uni)']
-        stock_init = 50.0; pr_init = 10.0; costo_init = 5.0; orden_init = 20.0
+def generar_inventario_base(df_ventas=None, use_example_data=False):
+    """
+    Genera inventario base a partir de ventas o ejemplo
+    """
+    if use_example_data or df_ventas is None:
+        return pd.DataFrame({
+            'Producto': ['Café en Grano (Kg)', 'Leche Entera (Litros)', 'Pan Hamburguesa (Uni)'],
+            'Stock Actual': [50, 100, 200],
+            'Unidad': ['kg', 'litros', 'unidades']
+        })
     else:
-        productos_base = productos_de_ventas if productos_de_ventas else []
-        stock_init = 0.0; pr_init = 0.0; costo_init = 1.0; orden_init = 0.0
-
-    if not productos_base: return pd.DataFrame()
-
-    data = {
-        'Producto': productos_base, 'Categoría': ['Insumo'] * len(productos_base),
-        'Unidad': ['UNI'] * len(productos_base), 'Stock Actual': [stock_init] * len(productos_base),
-        'Punto de Reorden (PR)': [pr_init] * len(productos_base), 
-        'Cantidad a Ordenar': [orden_init] * len(productos_base),
-        'Costo Unitario': [costo_init] * len(productos_base),
-    }
-    df = pd.DataFrame(data)
-    
-    df['Unidad'] = np.select(
-        [df['Producto'].astype(str).str.contains(r'\(Kg\)', na=False, case=False),
-         df['Producto'].astype(str).str.contains(r'\(L\)', na=False, case=False)],
-        ['KG', 'L'], default='UNI'
-    )
-    
-    df['Faltante?'] = df['Stock Actual'] < df['Punto de Reorden (PR)']
-    df['Valor Total'] = df['Stock Actual'] * df['Costo Unitario']
-    return df
-
+        # USAR DATOS REALES
+        productos = df_ventas['producto'].unique()
+        inventario = []
+        for prod in productos:
+            ventas_total = df_ventas[df_ventas['producto'] == prod]['cantidad_vendida'].sum()
+            # Stock inicial estimado: 2x ventas promedio diarias
+            stock_inicial = ventas_total * 2
+            stock_actual = max(stock_inicial - ventas_total, 0)
+            inventario.append({
+                'Producto': prod,
+                'Stock Actual': stock_actual,
+                'Unidad': 'unidades'
+            })
+        return pd.DataFrame(inventario)
 def sincronizar_puntos_optimos(df_inventario: pd.DataFrame, df_resultados: pd.DataFrame) -> pd.DataFrame:
     """Actualiza las columnas 'Punto de Reorden (PR)' y 'Cantidad a Ordenar'."""
     if df_resultados is None or df_resultados.empty:
