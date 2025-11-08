@@ -1,116 +1,121 @@
-# modules/trazability.py
-
+# modules/recipes.py
+import streamlit as st
 import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
-from typing import Dict, Union
 
-def calcular_trazabilidad_inventario(
-    df_ventas: pd.DataFrame, 
-    df_entradas: pd.DataFrame, 
-    nombre_producto: str, 
-    stock_actual_manual: float,
-    punto_reorden: float,
-    cantidad_a_ordenar: float,
-    pronostico_diario_promedio: float,
-    lead_time: int
-) -> Union[pd.DataFrame, None]:
+def calcular_costos_margenes(df_recetas, precio_venta, platillo):
     """
-    Calcula la trazabilidad histórica del stock y la proyecta al futuro,
-    simulando órdenes de compra al tocar el PR.
+    Calcula costo total, margen y margen % de un platillo.
     """
-    
-    # --- 1. PREPARACIÓN DE DATOS DIARIOS ---
-    
-    ventas_prod = df_ventas[df_ventas['producto'] == nombre_producto][['fecha', 'cantidad_vendida']].copy()
-    entradas_prod = df_entradas[df_entradas['producto'] == nombre_producto][['fecha', 'cantidad_recibida']].copy()
-    
-    if ventas_prod.empty and entradas_prod.empty:
+    if df_recetas.empty:
+        st.error("El archivo de recetas está vacío.")
         return None
 
-    # Limpieza de tipos (Robusta)
-    ventas_prod['cantidad_vendida'] = pd.to_numeric(ventas_prod['cantidad_vendida'], errors='coerce').fillna(0)
-    entradas_prod['cantidad_recibida'] = pd.to_numeric(entradas_prod['cantidad_recibida'], errors='coerce').fillna(0)
-    
-    # Rango de fechas: Desde el inicio de los datos hasta hoy + 60 días
-    
-    # CORRECCIÓN CLAVE: Usamos .now().date() para obtener un objeto de fecha nativa
-    # y luego lo convertimos a datetime con tiempo 00:00:00. 
-    fecha_actual = datetime.now().date()
-    fecha_actual_dt = datetime(fecha_actual.year, fecha_actual.month, fecha_actual.day)
-    
-    # Obtener las fechas mínimas ya normalizadas (a 00:00:00) del DataFrame principal
-    min_date_ventas = ventas_prod['fecha'].min() if not ventas_prod.empty and not pd.isna(ventas_prod['fecha'].min()) else fecha_actual_dt
-    min_date_entradas = entradas_prod['fecha'].min() if not entradas_prod.empty and not pd.isna(entradas_prod['fecha'].min()) else fecha_actual_dt
+    # Normalizar nombres de columnas (por si vienen con espacios o mayúsculas)
+    df_recetas.columns = df_recetas.columns.str.strip().str.lower()
 
-    # Aseguramos que solo comparamos objetos datetime.datetime o pd.Timestamp (que se comportan similarmente aquí)
-    min_date = min(min_date_ventas, min_date_entradas)
-    
-    dias_proyeccion = 60
-    fechas = pd.date_range(start=min_date, end=fecha_actual_dt + timedelta(days=dias_proyeccion), name='Fecha')
-    
-    df_diario = pd.DataFrame(index=fechas)
-    df_diario['Ventas'] = 0.0
-    df_diario['Entradas'] = 0.0
-    
-    # Mapear ventas y entradas históricas
-    if not ventas_prod.empty:
-        # Aseguramos que la columna 'fecha' sea el índice y luego la re-muestreamos
-        ventas_diarias = ventas_prod.set_index('fecha').resample('D').sum()['cantidad_vendida']
-        ventas_diarias = pd.Series(ventas_diarias).fillna(0)
-        df_diario.loc[df_diario.index.intersection(ventas_diarias.index), 'Ventas'] = ventas_diarias
-        
-    if not entradas_prod.empty:
-        entradas_diarias = entradas_prod.set_index('fecha').resample('D').sum()['cantidad_recibida']
-        entradas_diarias = pd.Series(entradas_diarias).fillna(0)
-        df_diario.loc[df_diario.index.intersection(entradas_diarias.index), 'Entradas'] = entradas_diarias
+    # Filtrar el platillo
+    mask = df_recetas['platillo'].str.lower() == platillo.lower()
+    df_platillo = df_recetas[mask].copy()
 
-    # --- 2. CÁLCULO DE INVENTARIO (Simulación de PR) ---
-    
-    df_diario['Stock'] = 0.0
-    df_diario['Simulacion_Entradas'] = 0.0
-    
-    df_diario['Tipo'] = np.where(df_diario.index.date <= fecha_actual_dt.date(), 'Histórico', 'Proyectado')
-    
-    stock_t = stock_actual_manual
-    
-    # Iterar día a día
-    for i, date_ts in enumerate(df_diario.index):
-        if i == 0:
-            df_diario.loc[date_ts, 'Stock'] = stock_t
-            continue
-            
-        idx_anterior = df_diario.index[i - 1]
-        
-        # 1. Stock del inicio del día = Stock del día anterior
-        stock_t = df_diario.loc[idx_anterior, 'Stock']
-        
-        # 2. Determinar la Demanda y Entradas
-        is_historico = df_diario.loc[date_ts, 'Tipo'] == 'Histórico'
-        
-        demanda_t = df_diario.loc[date_ts, 'Ventas'] if is_historico else pronostico_diario_promedio
-        entradas_reales_t = df_diario.loc[date_ts, 'Entradas'] if is_historico else 0
-        
-        simulacion_entrada_t = 0.0
-        
-        # 3. Simular Orden de Compra (Solo en la proyección)
-        if not is_historico:
-            # Comprobamos el PR ANTES de consumir la demanda del día
-            if stock_t <= punto_reorden:
-                fecha_llegada = date_ts + timedelta(days=lead_time)
-                
-                # Agregamos la orden de compra en la fecha de llegada
-                if fecha_llegada in df_diario.index:
-                    df_diario.loc[fecha_llegada, 'Simulacion_Entradas'] += cantidad_a_ordenar
-                    
-            # Si hoy llegó una orden simulada, la agregamos al stock
-            simulacion_entrada_t = df_diario.loc[date_ts, 'Simulacion_Entradas']
+    if df_platillo.empty:
+        st.error(f"⚠️ No se encontró el platillo: **{platillo}**")
+        return None
 
-        # 4. Cálculo del Stock Final del Día
-        stock_final = stock_t - demanda_t + entradas_reales_t + simulacion_entrada_t
-        stock_final = max(0, stock_final)
-        
-        # 5. Guardar Stock para el día actual
-        df_diario.loc[date_ts, 'Stock'] = stock_final
-        
-    return df_diario.reset_index()
+    # --- DEBUG: Mostrar datos (puedes comentar en producción) ---
+    with st.expander("🔍 Debug: Datos del platillo", expanded=False):
+        st.write(f"Filas encontradas: {len(df_platillo)}")
+        st.write("Columnas disponibles:", df_platillo.columns.tolist())
+        st.dataframe(df_platillo)
+
+    # --- Definir nombres esperados (ajusta según tu CSV) ---
+    col_cantidad = 'cantidad_por_unidad'   # Cambia si en tu CSV es 'cantidad', 'cant', etc.
+    col_costo = 'costo_unitario'           # Cambia si es 'costo', 'precio_unitario', etc.
+
+    # Validar columnas críticas
+    missing_cols = []
+    if col_cantidad not in df_platillo.columns:
+        missing_cols.append(col_cantidad)
+    if col_costo not in df_platillo.columns:
+        missing_cols.append(col_costo)
+
+    if missing_cols:
+        st.error(f"❌ Faltan columnas en el platillo: {missing_cols}")
+        st.write("Columnas disponibles:", df_platillo.columns.tolist())
+        return None
+
+    # Calcular costo total
+    try:
+        df_platillo['costo_parcial'] = df_platillo[col_cantidad] * df_platillo[col_costo]
+        costo_total = df_platillo['costo_parcial'].sum()
+    except Exception as e:
+        st.error(f"Error al calcular costos: {e}")
+        return None
+
+    # Calcular margen
+    if precio_venta <= 0:
+        st.warning("El precio de venta debe ser mayor a 0.")
+        margen = margen_porcentual = 0
+    else:
+        margen = precio_venta - costo_total
+        margen_porcentual = (margen / precio_venta) * 100
+
+    return {
+        'costo_total': round(costo_total, 2),
+        'margen': round(margen, 2),
+        'margen_porcentual': round(margen_porcentual, 2),
+        'df_detalle': df_platillo[['ingrediente', col_cantidad, col_costo, 'costo_parcial']]
+    }
+
+
+def recetas_app():
+    st.title("🍽️ Recetas y Costos")
+
+    # --- Cargar datos desde GitHub o local ---
+    csv_url = "https://raw.githubusercontent.com/tu-usuario/stock-zero-mvp/main/data/recetas.csv"
+    try:
+        df_recetas = pd.read_csv(csv_url)
+        st.success("Datos cargados desde GitHub")
+    except Exception as e:
+        st.error(f"No se pudo cargar el CSV: {e}")
+        st.info("Asegúrate de que el archivo `recetas.csv` esté en `/data/` en GitHub.")
+        return
+
+    if df_recetas.empty:
+        st.warning("El archivo está vacío.")
+        return
+
+    # Normalizar columnas
+    df_recetas.columns = df_recetas.columns.str.strip().str.lower()
+
+    # Validar columnas mínimas
+    required_cols = ['platillo', 'ingrediente']
+    missing = [col for col in required_cols if col not in df_recetas.columns]
+    if missing:
+        st.error(f"Faltan columnas obligatorias: {missing}")
+        return
+
+    # --- Interfaz ---
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        platillo = st.selectbox(
+            "Selecciona un platillo",
+            options=sorted(df_recetas['platillo'].unique())
+        )
+    with col2:
+        precio_venta = st.number_input("Precio de venta", min_value=0.0, value=150.0, step=5.0)
+
+    if st.button("Calcular Costos y Margen"):
+        info = calcular_costos_margenes(df_recetas, precio_venta, platillo)
+        if info:
+            st.success(f"**{platillo.upper()}**")
+            col_a, col_b, col_c = st.columns(3)
+            col_a.metric("Costo Total", f"${info['costo_total']}")
+            col_b.metric("Margen", f"${info['margen']}")
+            col_c.metric("Margen %", f"{info['margen_porcentual']}%")
+
+            st.subheader("Desglose de Ingredientes")
+            st.dataframe(info['df_detalle'].style.format({
+                'cantidad_por_unidad': '{:.2f}',
+                'costo_unitario': '${:.2f}',
+                'costo_parcial': '${:.2f}'
+            }))
