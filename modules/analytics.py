@@ -129,7 +129,7 @@ def analytics_app():
     fig.add_trace(go.Scatter(
         x=futuro, y=prediccion_futura.values,
         mode='lines+markers', name='Predicción por Día',
-        line=dict(color=COLOR_PREDICCIONure, width=3),
+        line=dict(color=COLOR_PREDICCION, width=3),
         fill='tonexty', fillcolor='rgba(76, 201, 240, 0.2)'
     ))
 
