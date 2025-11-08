@@ -24,7 +24,7 @@ except ImportError:
     def recetas_app():
         st.error("Módulo `recipes.py` no encontrado")
 
-# --- Analytics (NUEVO: gráficos + estacionalidad) ---
+# --- Analytics (NUEVO) ---
 try:
     from modules.analytics import analytics_app
     ANALYTICS_AVAILABLE = True
@@ -59,7 +59,7 @@ DEFAULTS = {
     'df_ventas_trazabilidad': pd.DataFrame(columns=['fecha','producto','cantidad_vendida']),
     'df_stock_trazabilidad': pd.DataFrame(columns=['fecha','producto','cantidad_recibida']),
     'df_resultados': None,
-    'inventario_df': generar_inventario_base(None, use_example_data=True)
+    'inventario_df': None  # ← Eliminamos ejemplo, se genera con datos reales
 }
 
 for k, v in DEFAULTS.items():
@@ -67,7 +67,7 @@ for k, v in DEFAULTS.items():
         st.session_state[k] = v
 
 # ============================================
-# EJEMPLOS
+# EJEMPLOS (solo para guía)
 # ============================================
 @st.cache_data
 def ejemplo_ventas_largo():
@@ -99,7 +99,7 @@ def ejemplo_ventas_ancho():
     return pd.DataFrame(data)
 
 # ============================================
-# PROCESAR CSV / EXCEL
+# PROCESAR CSV
 # ============================================
 def procesar_csv(bytes_data, tipo):
     df = pd.read_csv(io.BytesIO(bytes_data))
@@ -239,6 +239,8 @@ if pagina == "Optimización de Inventario":
         st.stop()
 
     df_ventas = st.session_state.df_ventas
+
+    # === REGENERAR INVENTARIO CON DATOS REALES ===
     st.session_state.inventario_df = generar_inventario_base(df_ventas, use_example_data=False)
 
     st.markdown("### 2. Resumen")
@@ -307,6 +309,7 @@ if pagina == "Optimización de Inventario":
 # === CONTROL DE INVENTARIO BÁSICO ===
 elif pagina == "Control de Inventario Básico":
     inventario_basico_app()
+
 # === ANÁLISIS ===
 elif pagina == "Análisis":
     try:
