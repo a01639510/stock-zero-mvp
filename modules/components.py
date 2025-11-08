@@ -48,6 +48,9 @@ def generar_inventario_base(df_ventas: pd.DataFrame = None, use_example_data: bo
 
 def sincronizar_puntos_optimos(df_inventario: pd.DataFrame, df_resultados: pd.DataFrame) -> pd.DataFrame:
     """Actualiza las columnas 'Punto de Reorden (PR)' y 'Cantidad a Ordenar'."""
+    if df_resultados is None or df_resultados.empty:
+        return df_inventario  # No sincronizar si no hay resultados
+    
     pr_map = df_resultados.set_index('producto')['punto_reorden'].to_dict()
     orden_map = df_resultados.set_index('producto')['cantidad_a_ordenar'].to_dict()
     
@@ -89,10 +92,12 @@ def inventario_basico_app():
         st.warning("El inventario base está vacío. Sube datos en la pestaña de Optimización.")
         return 
 
-    # Sincronización de datos (si hay resultados)
+    # Sincronización de datos (SIEMPRE VERIFICAR)
     if 'df_resultados' in st.session_state and st.session_state['df_resultados'] is not None and not st.session_state['df_resultados'].empty:
         df_inventario = sincronizar_puntos_optimos(df_inventario, st.session_state['df_resultados'])
         st.session_state['inventario_df'] = df_inventario
+    else:
+        st.info("💡 Calcula los resultados en Optimización para sincronizar PR y cantidades.")
 
     st.subheader("1️⃣ Inventario Actual (Edición en Vivo)")
     
