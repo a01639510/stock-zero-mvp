@@ -1,11 +1,4 @@
-import streamlit as st
-st.write(st.__version__)
-# stock_zero_mvp.py
-import streamlit as st
-import pandas as pd
-import plotly.graph_objects as go
-from datetime import datetime, timedelta
-# stock_zero_mvp.py
+# app.py
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -17,11 +10,11 @@ st.set_page_config(page_title="Stock Zero", layout="wide")
 # === SIDEBAR (AL INICIO!) ===
 with st.sidebar:
     st.image("https://via.placeholder.com/100", caption="Stock Zero")
-    st.page_link("stock_zero_mvp.py", label="Home", icon="🏠")
-    st.page_link("pages/1_Archivos.py", label="Archivos", icon="📁")
-    st.page_link("pages/2_Inventario.py", label="Inventario", icon="📦")
-    st.page_link("pages/3_Analisis.py", label="Análisis", icon="📊")
-    st.page_link("pages/4_Productos.py", label="Productos", icon="🛒")
+    st.page_link("app.py", label="Home", icon="Home")
+    st.page_link("pages/1_Archivos.py", label="Archivos", icon="Folder")
+    st.page_link("pages/2_Inventario.py", label="Inventario", icon="Box")
+    st.page_link("pages/3_Analisis.py", label="Análisis", icon="Chart")
+    st.page_link("pages/4_Productos.py", label="Productos", icon="Shopping Cart")
 
 # === TÍTULO ===
 st.title("Stock Zero")
@@ -57,7 +50,7 @@ else:
     fig.add_hline(y=ucl, line_dash="dot", line_color="red", annotation_text="UCL")
     fig.add_hline(y=lcl, line_dash="dot", line_color="red", annotation_text="LCL")
     fig.update_layout(title="Control Chart de Ventas", height=400)
-    st.plotly_chart(fig, width='stretch')
+    st.plotly_chart(fig, use_container_width=True)
 
 # === KPIs ===
 col1, col2, col3, col4 = st.columns(4)
@@ -74,4 +67,5 @@ with col4:
     valor = (df_stock['cantidad'] * df_stock.get('costo_unitario', 10)).sum() if df_stock is not None else 0
     st.metric("Valor Inventario", f"${valor:,.0f}")
 
+# === MENSAJE FINAL (CORREGIDO!) ===
 st.success("Dashboard activo. Usa el menú lateral.")
