@@ -1,4 +1,5 @@
-
+import streamlit as st
+st.write(st.__version__)
 # stock_zero_mvp.py
 import streamlit as st
 import pandas as pd
