@@ -301,5 +301,7 @@ def analytics_app():
     st.session_state.df_sim = df_sim
     st.session_state.PR = PR
 # Al final de analytics_app() en modules/analytics.py
+st.session_state.df_sim = df_sim
+st.session_state.PR = PR
 
         
