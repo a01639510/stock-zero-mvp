@@ -47,3 +47,11 @@ with col3: st.metric("Productos Críticos", len(df_stock[df_stock['cantidad'] < 
 with col4: st.metric("Valor Inventario", f"${(df_stock['cantidad'] * df_stock.get('costo_unitario', 10)).sum():,.0f}" if df_stock is not None else "$0")
 
 st.success("Dashboard activo. Usa el menú lateral.")
+# Al final de stock_zero_mvp.py
+with st.sidebar:
+    st.image("https://via.placeholder.com/100", caption="Stock Zero")
+    st.page_link("stock_zero_mvp.py", label="Home", icon="🏠")
+    st.page_link("pages/1_Archivos.py", label="Archivos", icon="📁")
+    st.page_link("pages/2_Inventario.py", label="Inventario", icon="📦")
+    st.page_link("pages/3_Analisis.py", label="Análisis", icon="📊")
+    st.page_link("pages/4_Productos.py", label="Productos", icon="🛒")
