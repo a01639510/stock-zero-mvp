@@ -1,48 +1,48 @@
-
+# pages/1_Archivos.py
 import streamlit as st
 import pandas as pd
+import io
+
+# === SIDEBAR ===
+with st.sidebar:
+    st.page_link("stock_zero_mvp.py", label="Home", icon="🏠")
+    st.page_link("pages/1_Archivos.py", label="Archivos", icon="📁")
+    st.page_link("pages/2_Inventario.py", label="Inventario", icon="📦")
+    st.page_link("pages/3_Analisis.py", label="Análisis", icon="📊")
+    st.page_link("pages/4_Productos.py", label="Productos", icon="🛒")
 
 st.title("Archivos")
 
-# === CARGAR ARCHIVOS ===
-st.markdown("### Cargar Datos")
+# === CARGAR ===
 col1, col2 = st.columns(2)
 with col1:
-    uploaded_ventas = st.file_uploader("Ventas (CSV)", type="csv", key="upload_ventas")
+    uploaded_ventas = st.file_uploader("Ventas CSV", type="csv")
 with col2:
-    uploaded_stock = st.file_uploader("Stock Actual (CSV)", type="csv", key="upload_stock")
+    uploaded_stock = st.file_uploader("Stock CSV", type="csv")
 
 if uploaded_ventas:
-    df_ventas = pd.read_csv(uploaded_ventas)
-    st.session_state.df_ventas = df_ventas
-    st.success(f"Ventas: {len(df_ventas)} filas")
-    st.dataframe(df_ventas.head())
+    df = pd.read_csv(uploaded_ventas)
+    st.session_state.df_ventas = df
+    st.session_state.df_ventas_trazabilidad = df.copy()
+    st.success("Ventas cargadas")
 
 if uploaded_stock:
-    df_stock = pd.read_csv(uploaded_stock)
-    st.session_state.df_stock = df_stock
-    st.success(f"Stock: {len(df_stock)} filas")
-    st.dataframe(df_stock.head())
+    df = pd.read_csv(uploaded_stock)
+    st.session_state.df_stock = df
+    st.success("Stock cargado")
 
-# === EDITAR ARCHIVOS ===
-st.markdown("### Editar Datos")
-if st.session_state.get('df_ventas') is not None:
-    st.markdown("#### Ventas")
-    edited_ventas = st.data_editor(st.session_state.df_ventas, num_rows="dynamic")
+# === EDITAR ===
+if 'df_ventas' in st.session_state:
+    st.markdown("### Editar Ventas")
+    edited = st.data_editor(st.session_state.df_ventas, num_rows="dynamic")
     if st.button("Guardar Ventas"):
-        st.session_state.df_ventas = edited_ventas
-        st.success("Ventas guardadas en sesión")
+        st.session_state.df_ventas = edited
+        st.session_state.df_ventas_trazabilidad = edited
+        st.rerun()
 
-if st.session_state.get('df_stock') is not None:
-    st.markdown("#### Stock")
-    edited_stock = st.data_editor(st.session_state.df_stock, num_rows="dynamic")
+if 'df_stock' in st.session_state:
+    st.markdown("### Editar Stock")
+    edited = st.data_editor(st.session_state.df_stock, num_rows="dynamic")
     if st.button("Guardar Stock"):
-        st.session_state.df_stock = edited_stock
-        st.success("Stock guardado en sesión")
-with st.sidebar:
-    st.image("https://via.placeholder.com/150", caption="Stock Zero")
-    st.page_link("stock_zero_mvp.py", label="Home")
-    st.page_link("pages/1_Archivos.py", label="Archivos")
-    st.page_link("pages/2_Inventario.py", label="Inventario")
-    st.page_link("pages/3_Analisis.py", label="Análisis")
-    st.page_link("pages/4_Productos.py", label="Productos")
+        st.session_state.df_stock = edited
+        st.rerun()
