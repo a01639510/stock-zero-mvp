@@ -297,3 +297,9 @@ def analytics_app():
 
     exceso = df_semanal['Tradicional Stock'].mean() - df_semanal['Nuestro Stock'].mean()
     st.info(f"**Exceso de stock evitado: {exceso:.1f} unidades por semana**")
+    # Al final de analytics_app() en modules/analytics.py
+st.session_state.df_sim = df_sim
+st.session_state.PR = PR
+# Al final de analytics_app() en modules/analytics.py
+
+        
