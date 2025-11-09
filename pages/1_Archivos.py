@@ -4,12 +4,14 @@ import pandas as pd
 import io
 
 # === SIDEBAR ===
-with st.sidebar:
-    st.page_link("stock_zero_mvp.py", label="Home", icon="🏠")
-    st.page_link("pages/1_Archivos.py", label="Archivos", icon="📁")
-    st.page_link("pages/2_Inventario.py", label="Inventario", icon="📦")
-    st.page_link("pages/3_Analisis.py", label="Análisis", icon="📊")
-    st.page_link("pages/4_Productos.py", label="Productos", icon="🛒")
+# pages/1_Archivos.py
+import streamlit as st
+from modules.sidebar import mostrar_sidebar
+
+mostrar_sidebar()
+
+st.title("Archivos")
+# ... resto del código
 
 st.title("Archivos")
 
