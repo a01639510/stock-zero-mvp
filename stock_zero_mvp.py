@@ -74,4 +74,4 @@ with col4:
     valor = (df_stock['cantidad'] * df_stock.get('costo_unitario', 10)).sum() if df_stock is not None else 0
     st.metric("Valor Inventario", f"${valor:,.0f}")
 
-st.success "Dashboard activo. Usa el menú lateral."
+st.success("Dashboard activo. Usa el menú lateral.")
