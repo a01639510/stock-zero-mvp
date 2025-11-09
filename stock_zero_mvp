@@ -1,4 +1,4 @@
-# app.py
+# stock_zero_mvp.py
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -7,14 +7,15 @@ from datetime import datetime, timedelta
 # === CONFIGURACIÓN ===
 st.set_page_config(page_title="Stock Zero", layout="wide")
 
-# === SIDEBAR (AL INICIO!) ===
+# === SIDEBAR MANUAL (SIN st.page_link) ===
 with st.sidebar:
     st.image("https://via.placeholder.com/100", caption="Stock Zero")
-    st.page_link("app.py", label="Home", icon="Home")
-    st.page_link("pages/1_Archivos.py", label="Archivos", icon="Folder")
-    st.page_link("pages/2_Inventario.py", label="Inventario", icon="Box")
-    st.page_link("pages/3_Analisis.py", label="Análisis", icon="Chart")
-    st.page_link("pages/4_Productos.py", label="Productos", icon="Shopping Cart")
+    st.markdown("### Navegación")
+    st.markdown("[Home](?page=home)")
+    st.markdown("[Archivos](?page=1_Archivos)")
+    st.markdown("[Inventario](?page=2_Inventario)")
+    st.markdown("[Análisis](?page=3_Analisis)")
+    st.markdown("[Productos](?page=4_Productos)")
 
 # === TÍTULO ===
 st.title("Stock Zero")
@@ -67,5 +68,5 @@ with col4:
     valor = (df_stock['cantidad'] * df_stock.get('costo_unitario', 10)).sum() if df_stock is not None else 0
     st.metric("Valor Inventario", f"${valor:,.0f}")
 
-# === MENSAJE FINAL (CORREGIDO!) ===
+# === MENSAJE FINAL ===
 st.success("Dashboard activo. Usa el menú lateral.")
