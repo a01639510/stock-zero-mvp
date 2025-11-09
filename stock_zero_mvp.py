@@ -3,12 +3,19 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import timedelta
-from modules.sidebar import mostrar_sidebar
+from modules.analytics import analytics_app  # Importamos aquí
 
 st.set_page_config(page_title="Stock Zero", layout="wide")
 
-# === SIDEBAR ÚNICO ===
-mostrar_sidebar()
+# === SIDEBAR ÚNICO (SOLO AQUÍ) ===
+with st.sidebar:
+    st.image("https://via.placeholder.com/100", caption="Stock Zero", width=100)
+    st.markdown("### Navegación")
+    st.markdown("- [Home](stock_zero_mvp.py)")
+    st.markdown("- [Archivos](pages/1_Archivos.py)")
+    st.markdown("- [Inventario](pages/2_Inventario.py)")
+    st.markdown("- [Análisis](pages/3_Analisis.py)")
+    st.markdown("- [Productos](pages/4_Productos.py)")
 
 st.title("Stock Zero")
 st.markdown("---")
@@ -23,36 +30,41 @@ if 'df_ventas' not in st.session_state or st.session_state.df_ventas is None:
 df_ventas = st.session_state.df_ventas.copy()
 df_stock = st.session_state.get('df_stock', pd.DataFrame())
 
+# === CALCULAR RESULTADOS SI NO EXISTEN ===
+if 'df_resultados' not in st.session_state:
+    try:
+        from modules.core_analysis import procesar_multiple_productos
+        st.session_state.df_resultados = procesar_multiple_productos(
+            st.session_state.df_ventas, 
+            st.session_state.get('df_stock', pd.DataFrame())
+        )
+    except Exception as e:
+        st.error(f"Error procesando datos: {e}")
+        st.stop()
+
 # === GRÁFICO DE FLUJO (SIN UCL/LCL) ===
 st.markdown("### Flujo de Inventario (Stock vs Ventas vs PR)")
 
 try:
-    df_ventas['fecha'] = pd.to_datetime(df_ventas['fecha'], errors='coerce')
-    ultimo_dia = df_ventas['fecha'].max()
-    ventas_hist = df_ventas.groupby('fecha')['cantidad_vendida'].sum()
+    # Ejecutar analytics_app() para obtener df_sim y PR
+    with st.container():
+        analytics_app()  # Esto genera df_sim y PR en session_state
 
-    # Simulación ligera (usar analytics si existe)
     df_sim = st.session_state.get('df_sim')
     PR = st.session_state.get('PR', 100)
 
+    df_ventas['fecha'] = pd.to_datetime(df_ventas['fecha'], errors='coerce')
+    ventas_hist = df_ventas.groupby('fecha')['cantidad_vendida'].sum()
+
     fig = go.Figure()
-
-    # Ventas
     fig.add_trace(go.Bar(x=ventas_hist.index, y=ventas_hist.values, name="Ventas", marker_color="#4361EE"))
-
-    # Stock simulado
+    
     if df_sim is not None and not df_sim.empty:
         fig.add_trace(go.Scatter(x=df_sim['fecha'], y=df_sim['stock'], mode='lines', name="Stock", line=dict(color="#4CC9F0", width=3)))
-
-    # PR
+    
     fig.add_hline(y=PR, line_dash="dash", line_color="#FF6B6B", annotation_text=f"PR = {PR}")
 
-    fig.update_layout(
-        title="Flujo: Ventas + Stock + Punto de Reorden",
-        xaxis_title="Fecha",
-        yaxis_title="Unidades",
-        height=500
-    )
+    fig.update_layout(title="Flujo: Ventas + Stock + Punto de Reorden", height=500)
     st.plotly_chart(fig, use_container_width=True)
 except Exception as e:
     st.error(f"Error en gráfico: {e}")
