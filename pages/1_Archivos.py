@@ -1,48 +1,25 @@
 # pages/1_Archivos.py
 import streamlit as st
-import pandas as pd
+from streamlit_supabase_connection import SupabaseConnection
 
 st.title("Archivos")
 
-col1, col2 = st.columns(2)
-with col1:
-    uploaded_ventas = st.file_uploader("Ventas CSV", type="csv", key="ventas")
-with col2:
-    uploaded_stock = st.file_uploader("Stock CSV", type="csv", key="stock")
+conn = st.connection("supabase", type=SupabaseConnection)
 
-if uploaded_ventas:
-    df = pd.read_csv(uploaded_ventas)
-    st.session_state.df_ventas = df
-    st.session_state.df_ventas_trazabilidad = df.copy()
-    st.success("Ventas cargadas")
-    if 'df_resultados' in st.session_state:
-        del st.session_state.df_resultados
+# === CARGAR DESDE DB ===
+data = conn.table("ventas").select("*").eq("user_id", st.session_state.user_id).execute()
+st.session_state.df_ventas = pd.DataFrame(data.data)
+
+# === SUBIR CSV Y GUARDAR EN DB ===
+uploaded = st.file_uploader("Ventas CSV", type="csv")
+if uploaded:
+    df = pd.read_csv(uploaded)
+    for _, row in df.iterrows():
+        conn.table("ventas").upsert({
+            "user_id": st.session_state.user_id,
+            "fecha": row['fecha'],
+            "producto": row['producto'],
+            "cantidad_vendida": row['cantidad_vendida']
+        }).execute()
+    st.success("CSV guardado en DB")
     st.rerun()
-
-if uploaded_stock:
-    df = pd.read_csv(uploaded_stock)
-    st.session_state.df_stock = df
-    st.success("Stock cargado")
-    if 'df_resultados' in st.session_state:
-        del st.session_state.df_resultados
-    st.rerun()
-
-# === EDITAR ===
-if 'df_ventas' in st.session_state:
-    st.markdown("### Editar Ventas")
-    edited = st.data_editor(st.session_state.df_ventas, num_rows="dynamic")
-    if st.button("Guardar Ventas"):
-        st.session_state.df_ventas = edited
-        st.session_state.df_ventas_trazabilidad = edited
-        if 'df_resultados' in st.session_state:
-            del st.session_state.df_resultados
-        st.rerun()
-
-if 'df_stock' in st.session_state:
-    st.markdown("### Editar Stock")
-    edited = st.data_editor(st.session_state.df_stock, num_rows="dynamic")
-    if st.button("Guardar Stock"):
-        st.session_state.df_stock = edited
-        if 'df_resultados' in st.session_state:
-            del st.session_state.df_resultados
-        st.rerun()
