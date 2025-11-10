@@ -5,3 +5,5 @@ matplotlib>=3.7.0
 statsmodels>=0.14.0
 openpyxl>=3.0.0
 plotly
+st-supabase-connection  # Conector oficial
+supabase  # Cliente Python
