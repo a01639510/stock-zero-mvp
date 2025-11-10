@@ -21,15 +21,28 @@ with col1:
         password = st.text_input("Contraseña", type="password")
         if st.form_submit_button("Login"):
             try:
-                data = supabase.auth.sign_in_with_password({"email": email, "password": password})
-                st.session_state.user = data.user
-                st.session_state.user_id = data.user.id
-                st.success("¡Login exitoso!")
-                st.rerun()
+                # ← CORRECTO: devuelve (data, error)
+                response = supabase.auth.sign_in_with_password({
+                    "email": email,
+                    "password": password
+                })
+                
+                # Desempaquetar correctamente
+                data, error = response
+                
+                if error:
+                    st.error(f"Error: {error.message}")
+                elif data and data.user:
+                    st.session_state.user = data.user
+                    st.session_state.user_id = data.user.id
+                    st.success("¡Login exitoso!")
+                    st.rerun()
+                else:
+                    st.error("No se pudo iniciar sesión")
             except Exception as e:
-                st.error(f"Error: {e}")
+                st.error(f"Error inesperado: {e}")
 
-# === REGISTRO CON CONFIRMACIÓN DE CONTRASEÑA ===
+# === REGISTRO ===
 with col2:
     st.subheader("Crear Cuenta")
     with st.form("signup"):
@@ -41,12 +54,18 @@ with col2:
             if password != confirm_password:
                 st.error("Las contraseñas no coinciden")
             elif len(password) < 6:
-                st.error("La contraseña debe tener al menos 6 caracteres")
+                st.error("Mínimo 6 caracteres")
             else:
                 try:
-                    user = supabase.auth.sign_up({"email": email, "password": password})
-                    st.success("¡Cuenta creada! Ya puedes iniciar sesión.")
-                    st.info("No necesitas confirmar email.")
+                    response = supabase.auth.sign_up({
+                        "email": email,
+                        "password": password
+                    })
+                    data, error = response
+                    if error:
+                        st.error(f"Error: {error.message}")
+                    else:
+                        st.success("¡Cuenta creada! Ya puedes iniciar sesión.")
                 except Exception as e:
                     st.error(f"Error: {e}")
 
