@@ -17,46 +17,6 @@ if "user" not in st.session_state:
 if "user_id" not in st.session_state:
     st.session_state.user_id = None
 
-# === FUNCIÓN DE LOGIN ===
-def login(email, password):
-    try:
-        response = supabase.auth.sign_in_with_password({"email": email, "password": password})
-        data, error = response
-        if error:
-            st.error(f"Error: {str(error)}")
-            return False
-        if data and data.user:
-            st.session_state.user = data.user
-            st.session_state.user_id = data.user.id
-            st.session_state.access_token = data.access_token
-            return True
-        else:
-            st.error("Credenciales incorrectas")
-            return False
-    except Exception as e:
-        st.error(f"Error: {str(e)}")
-        return False
-
-# === FUNCIÓN DE REGISTRO ===
-def signup(email, password, confirm_password):
-    if password != confirm_password:
-        st.error("Las contraseñas no coinciden")
-        return False
-    if len(password) < 6:
-        st.error("Mínimo 6 caracteres")
-        return False
-    try:
-        response = supabase.auth.sign_up({"email": email, "password": password})
-        data, error = response
-        if error:
-            st.error(f"Error: {str(error)}")
-            return False
-        st.success("¡Cuenta creada! Ya puedes iniciar sesión.")
-        return True
-    except Exception as e:
-        st.error(f"Error: {str(e)}")
-        return False
-
 # === FUNCIÓN DE LOGOUT ===
 def logout():
     try:
@@ -73,7 +33,7 @@ if not st.session_state.user:
     st.title("Stock Zero")
 
     tab1, tab2 = st.tabs(["Iniciar Sesión", "Crear Cuenta"])
-    # === LOGIN ===
+
     # === LOGIN ===
     with tab1:
         with st.form("login_form"):
@@ -83,31 +43,46 @@ if not st.session_state.user:
                 try:
                     response = supabase.auth.sign_in_with_password({"email": email, "password": password})
                     data, error = response
-    
+
                     if error:
                         st.error(f"Error: {str(error)}")
-                    elif data and data.user:  # ¡ÉXITO!
+                    elif data and data.user:
                         st.session_state.user = data.user
                         st.session_state.user_id = data.user.id
+                        st.session_state.access_token = data.access_token
                         st.success("¡Login exitoso!")
-                        st.rerun()  # ← REDIRIGE AL DASHBOARD
+                        st.rerun()  # ← REDIRIGE
                     else:
                         st.error("Credenciales incorrectas")
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
 
+    # === REGISTRO ===
     with tab2:
         with st.form("signup_form"):
             email = st.text_input("Email", key="signup_email")
             password = st.text_input("Contraseña", type="password", key="signup_pass1")
             confirm_password = st.text_input("Confirmar Contraseña", type="password", key="signup_pass2")
             if st.form_submit_button("Crear Cuenta"):
-                signup(email, password, confirm_password)
+                if password != confirm_password:
+                    st.error("Las contraseñas no coinciden")
+                elif len(password) < 6:
+                    st.error("Mínimo 6 caracteres")
+                else:
+                    try:
+                        response = supabase.auth.sign_up({"email": email, "password": password})
+                        data, error = response
+                        if error:
+                            st.error(f"Error: {str(error)}")
+                        else:
+                            st.success("¡Cuenta creada! Ya puedes iniciar sesión.")
+                    except Exception as e:
+                        st.error(f"Error: {str(e)}")
 
-    st.stop()  # ← Detiene ejecución si no está logueado
+    st.stop()  # ← Detiene si no está logueado
 
 # ========================================
-# === SI ESTÁ LOGUEADO → MOSTRAR DASHBOARD ===
+# === SI ESTÁ LOGUEADO → DASHBOARD ===
 # ========================================
 
 # === SIDEBAR ===
@@ -130,7 +105,8 @@ def load_data():
         ventas = supabase.table("ventas").select("*").eq("user_id", st.session_state.user_id).execute()
         stock = supabase.table("stock").select("*").eq("user_id", st.session_state.user_id).execute()
         return pd.DataFrame(ventas.data), pd.DataFrame(stock.data)
-    except:
+    except Exception as e:
+        st.error(f"Error cargando datos: {e}")
         return pd.DataFrame(), pd.DataFrame()
 
 df_ventas, df_stock = load_data()
@@ -148,17 +124,25 @@ else:
     ventas_hist = df_ventas.groupby('fecha')['cantidad_vendida'].sum()
 
     fig = go.Figure()
-    fig.add_trace(go.Bar(x=ventas_hist.index, y=ventas_hist.values, name="Ventas"))
+    fig.add_trace(go.Bar(x=ventas_hist.index, y=ventas_hist.values, name="Ventas", marker_color="#4361EE"))
     if not df_stock.empty:
-        fig.add_hline(y=df_stock['cantidad_recibida'].sum(), line_dash="dash", line_color="green")
-    fig.add_hline(y=100, line_dash="dot", line_color="red", annotation_text="PR")
+        fig.add_hline(y=df_stock['cantidad_recibida'].sum(), line_dash="dash", line_color="#4CC9F0", annotation_text="Stock Actual")
+    fig.add_hline(y=100, line_dash="dot", line_color="#FF6B6B", annotation_text="PR = 100")
     fig.update_layout(title="Flujo de Inventario", height=500)
     st.plotly_chart(fig, use_container_width=True)
 
     col1, col2, col3, col4 = st.columns(4)
-    with col1: st.metric("Ventas Hoy", f"{ventas_hist.iloc[-1] if len(ventas_hist) > 0 else 0:.0f}")
-    with col2: st.metric("Stock Total", f"{df_stock['cantidad_recibida'].sum() if not df_stock.empty else 0:.0f}")
-    with col3: st.metric("Críticos", len(df_stock[df_stock['cantidad_recibida'] < 10]) if not df_stock.empty else 0)
-    with col4: st.metric("Valor", f"${(df_stock['cantidad_recibida'] * df_stock.get('costo_unitario', 10)).sum():,.0f}" if not df_stock.empty else "$0")
+    with col1:
+        hoy = ventas_hist.iloc[-1] if len(ventas_hist) > 0 else 0
+        st.metric("Ventas Hoy", f"{hoy:.0f}")
+    with col2:
+        total = df_stock['cantidad_recibida'].sum() if not df_stock.empty else 0
+        st.metric("Stock Total", f"{total:.0f}")
+    with col3:
+        criticos = len(df_stock[df_stock['cantidad_recibida'] < 10]) if not df_stock.empty else 0
+        st.metric("Productos Críticos", criticos)
+    with col4:
+        valor = (df_stock['cantidad_recibida'] * df_stock.get('costo_unitario', 10)).sum() if not df_stock.empty else 0
+        st.metric("Valor Inventario", f"${valor:,.0f}")
 
 st.success("Dashboard activo.")
