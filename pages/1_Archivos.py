@@ -3,8 +3,6 @@ import streamlit as st
 import pandas as pd
 from modules.sidebar import mostrar_sidebar
 
-mostrar_sidebar()
-
 st.title("Archivos")
 
 col1, col2 = st.columns(2)
