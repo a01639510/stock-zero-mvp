@@ -1,9 +1,7 @@
 # pages/2_Inventario.py
 import streamlit as st
-from modules.sidebar import mostrar_sidebar
-from modules.components import inventario_basico_app
 
-mostrar_sidebar()
+from modules.components import inventario_basico_app
 
 st.title("Inventario")
 
