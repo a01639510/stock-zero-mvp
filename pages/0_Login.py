@@ -19,29 +19,23 @@ with col1:
     with st.form("login"):
         email = st.text_input("Email")
         password = st.text_input("Contraseña", type="password")
+        # === LOGIN (DENTRO DEL FORM) ===
         if st.form_submit_button("Login"):
             try:
-                response = supabase.auth.sign_in_with_password({
-                    "email": email,
-                    "password": password
-                })
-                
-                # Supabase devuelve el objeto directamente (no una tupla)
-                if hasattr(response, 'user') and response.user:
-                    st.session_state.user = response.user
-                    st.session_state.user_id = response.user.id
-                    
-                    # Session viene dentro del objeto response
-                    if hasattr(response, 'session') and response.session:
-                        st.session_state.access_token = response.session.access_token
-                        st.session_state.refresh_token = response.session.refresh_token
-                    
+                response = supabase.auth.sign_in_with_password({"email": email, "password": password})
+                data, error = response
+        
+                if error:
+                    st.error(f"Error: {str(error)}")
+                elif data and data.user:  # ← ÉXITO
+                    st.session_state.user = data.user
+                    st.session_state.user_id = data.user.id
                     st.success("¡Login exitoso!")
-                    st.rerun()
+                    st.rerun()  # ← REDIRIGE AL DASHBOARD
                 else:
                     st.error("Credenciales incorrectas")
             except Exception as e:
-                st.error(f"Error de autenticación: {str(e)}")
+                st.error(f"Error: {str(e)}")
 
 # === REGISTRO ===
 with col2:
