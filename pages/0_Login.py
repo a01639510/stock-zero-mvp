@@ -4,11 +4,12 @@ from supabase import create_client
 
 st.set_page_config(page_title="Login - Stock Zero")
 
-# === CONEXIÓN ===
+# === LEE SECRETS CORRECTAMENTE ===
 supabase_url = st.secrets["supabase"]["url"]
 supabase_key = st.secrets["supabase"]["key"]
 supabase = create_client(supabase_url, supabase_key)
 
+# ... resto del código (login, signup, logout)
 st.title("Stock Zero - Login")
 
 col1, col2 = st.columns(2)
