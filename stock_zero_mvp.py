@@ -11,9 +11,11 @@ st.cache_resource.clear()
 st.set_page_config(page_title="Stock Zero", layout="wide")
 
 # === VERIFICAR LOGIN ===
-if "user" not in st.session_state or st.session_state.user is None:
-    st.warning("Por favor, inicia sesión en la página de **Login**.")
+if "user" not in st.session_state:
+    st.warning("Inicia sesión en la página de Login.")
     st.stop()
+
+st.sidebar.success(f"Usuario: {st.session_state.user.email}")
 
 # === CONEXIÓN A SUPABASE ===
 supabase_url = st.secrets["supabase"]["url"]
