@@ -1,7 +1,7 @@
 # pages/1_Archivos.py
 import streamlit as st
 import pandas as pd
-from modules.sidebar import mostrar_sidebar
+
 
 st.title("Archivos")
 
