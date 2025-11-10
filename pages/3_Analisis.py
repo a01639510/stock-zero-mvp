@@ -1,8 +1,5 @@
 # pages/3_Analisis.py
 import streamlit as st
-from modules.sidebar import mostrar_sidebar
-
-mostrar_sidebar()
 
 st.title("Análisis")
 
