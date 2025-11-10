@@ -35,7 +35,14 @@ if 'df_resultados' not in st.session_state:
 
 # === GRÁFICO DE FLUJO (SIN UCL/LCL) ===
 st.markdown("### Flujo de Inventario (Stock vs Ventas vs PR)")
-
+# Al inicio del gráfico en stock_zero_mvp.py
+if 'df_resultados' not in st.session_state:
+    with st.spinner("Calculando análisis..."):
+        from modules.core_analysis import procesar_multiple_productos
+        st.session_state.df_resultados = procesar_multiple_productos(
+            st.session_state.df_ventas,
+            st.session_state.get('df_stock', pd.DataFrame())
+        )
 try:
     # Ejecutar analytics_app() para obtener df_sim y PR
     with st.container():
