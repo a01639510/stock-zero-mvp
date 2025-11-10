@@ -73,15 +73,27 @@ if not st.session_state.user:
     st.title("Stock Zero")
 
     tab1, tab2 = st.tabs(["Iniciar Sesión", "Crear Cuenta"])
-
+    # === LOGIN ===
     with tab1:
         with st.form("login_form"):
             email = st.text_input("Email")
             password = st.text_input("Contraseña", type="password")
             if st.form_submit_button("Login"):
-                if login(email, password):
-                    st.success("¡Login exitoso!")
-                    st.rerun()
+                try:
+                    response = supabase.auth.sign_in_with_password({"email": email, "password": password})
+                    data, error = response
+    
+                    if error:
+                        st.error(f"Error: {str(error)}")
+                    elif data and data.user:
+                        st.session_state.user = data.user
+                        st.session_state.user_id = data.user.id
+                        st.success("¡Login exitoso!")
+                        st.rerun()  # ← ESTO ES LA CLAVE
+                    else:
+                        st.error("Credenciales incorrectas")
+                except Exception as e:
+                    st.error(f"Error: {str(e)}")
 
     with tab2:
         with st.form("signup_form"):
