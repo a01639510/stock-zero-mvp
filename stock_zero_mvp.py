@@ -1,148 +1,475 @@
 # stock_zero_mvp.py
+
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
-from supabase import create_client
+from datetime import datetime, timedelta
+import warnings
 
-st.set_page_config(page_title="Stock Zero", layout="wide")
+# --- IMPORTACIONES DE MÓDULOS ---
+from modules.core_analysis import procesar_multiple_productos
+from modules.trazability import calcular_trazabilidad_inventario
+from modules.components import (
+    inventario_basico_app, 
+    crear_grafico_comparativo, 
+    crear_grafico_trazabilidad_total, 
+    generar_inventario_base
+)
 
-# === CONEXIÓN SUPABASE ===
-supabase_url = st.secrets["supabase"]["url"]
-supabase_key = st.secrets["supabase"]["key"]
-supabase = create_client(supabase_url, supabase_key)
+try:
+    from modules.recipes import recetas_app
+    RECIPES_AVAILABLE = True
+except ImportError:
+    RECIPES_AVAILABLE = False
+    def recetas_app():
+        st.error("⚠️ El módulo de recetas no está disponible. Crea el archivo `modules/recipes.py`")
 
-# === ESTADO DE SESIÓN ===
-if "user" not in st.session_state:
-    st.session_state.user = None
-if "user_id" not in st.session_state:
-    st.session_state.user_id = None
+warnings.filterwarnings('ignore')
 
-# === FUNCIÓN DE LOGOUT ===
-def logout():
-    try:
-        supabase.auth.sign_out()
-    except:
-        pass
-    st.session_state.clear()
-    st.rerun()
+# ============================================
+# CONFIGURACIÓN E INICIO DE LA APLICACIÓN
+# ============================================
 
-# ========================================
-# === SI NO ESTÁ LOGUEADO → MOSTRAR LOGIN ===
-# ========================================
-if not st.session_state.user:
-    st.title("Stock Zero")
+st.set_page_config(
+    page_title="Stock Zero", 
+    page_icon="📦", 
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-    tab1, tab2 = st.tabs(["Iniciar Sesión", "Crear Cuenta"])
+# ============================================
+# FUNCIONES AUXILIARES PARA EJEMPLOS
+# ============================================
 
-    # === LOGIN ===
-    with tab1:
-        with st.form("login_form"):
-            email = st.text_input("Email")
-            password = st.text_input("Contraseña", type="password")
-            if st.form_submit_button("Login"):
-                try:
-                    response = supabase.auth.sign_in_with_password({"email": email, "password": password})
-                    data, error = response
+def generar_ejemplo_ventas():
+    """Genera un DataFrame de ejemplo para ventas."""
+    fechas = pd.date_range(start='2024-01-01', end='2024-01-31', freq='D')
+    datos = []
+    productos = ['Café en Grano (Kg)', 'Leche Entera (Litros)', 'Pan Hamburguesa (Uni)']
+    
+    for fecha in fechas:
+        for producto in productos:
+            cantidad = int(10 + (hash(str(fecha) + producto) % 20))
+            datos.append({
+                'fecha': fecha.strftime('%Y-%m-%d'),
+                'producto': producto,
+                'cantidad_vendida': cantidad
+            })
+    
+    return pd.DataFrame(datos)
 
-                    if error:
-                        st.error(f"Error: {str(error)}")
-                    elif data and data.user:
-                        st.session_state.user = data.user
-                        st.session_state.user_id = data.user.id
-                        st.session_state.access_token = data.access_token
-                        st.success("¡Login exitoso!")
-                        st.rerun()  # ← REDIRIGE
-                    else:
-                        st.error("Credenciales incorrectas")
-                except Exception as e:
-                    st.error(f"Error: {str(e)}")
+def generar_ejemplo_stock():
+    """Genera un DataFrame de ejemplo para entradas de stock."""
+    datos = [
+        {'fecha': '2024-01-05', 'producto': 'Café en Grano (Kg)', 'cantidad_recibida': 50},
+        {'fecha': '2024-01-12', 'producto': 'Leche Entera (Litros)', 'cantidad_recibida': 100},
+        {'fecha': '2024-01-18', 'producto': 'Pan Hamburguesa (Uni)', 'cantidad_recibida': 200},
+        {'fecha': '2024-01-25', 'producto': 'Café en Grano (Kg)', 'cantidad_recibida': 50},
+    ]
+    return pd.DataFrame(datos)
 
-    # === REGISTRO ===
-    with tab2:
-        with st.form("signup_form"):
-            email = st.text_input("Email", key="signup_email")
-            password = st.text_input("Contraseña", type="password", key="signup_pass1")
-            confirm_password = st.text_input("Confirmar Contraseña", type="password", key="signup_pass2")
-            if st.form_submit_button("Crear Cuenta"):
-                if password != confirm_password:
-                    st.error("Las contraseñas no coinciden")
-                elif len(password) < 6:
-                    st.error("Mínimo 6 caracteres")
-                else:
-                    try:
-                        response = supabase.auth.sign_up({"email": email, "password": password})
-                        data, error = response
-                        if error:
-                            st.error(f"Error: {str(error)}")
-                        else:
-                            st.success("¡Cuenta creada! Ya puedes iniciar sesión.")
-                    except Exception as e:
-                        st.error(f"Error: {str(e)}")
+def generar_ejemplo_ventas_ancho():
+    """Genera un DataFrame de ejemplo en formato ancho para ventas."""
+    fechas = pd.date_range(start='2024-01-01', end='2024-01-31', freq='D')
+    datos = []
+    
+    for fecha in fechas:
+        fila = {'fecha': fecha.strftime('%Y-%m-%d')}
+        fila['Café en Grano (Kg)'] = int(10 + (hash(str(fecha) + 'cafe') % 15))
+        fila['Leche Entera (Litros)'] = int(15 + (hash(str(fecha) + 'leche') % 20))
+        fila['Pan Hamburguesa (Uni)'] = int(20 + (hash(str(fecha) + 'pan') % 25))
+        datos.append(fila)
+    
+    return pd.DataFrame(datos)
 
-    st.stop()  # ← Detiene si no está logueado
+# ============================================
+# SIDEBAR CON NAVEGACIÓN Y TÍTULO SIEMPRE VISIBLE
+# ============================================
 
-# ========================================
-# === SI ESTÁ LOGUEADO → DASHBOARD ===
-# ========================================
-
-# === SIDEBAR ===
 with st.sidebar:
-    st.image("https://via.placeholder.com/100", caption="Stock Zero", width=100)
-    st.success(f"Usuario: {st.session_state.user.email}")
-    st.markdown("### Navegación")
-    st.markdown("- [Home](stock_zero_mvp.py)")
-    st.markdown("- [Archivos](pages/1_Archivos.py)")
-    st.markdown("- [Inventario](pages/2_Inventario.py)")
-    st.markdown("- [Análisis](pages/3_Analisis.py)")
-    st.markdown("- [Productos](pages/4_Productos.py)")
-    if st.button("Cerrar Sesión"):
-        logout()
+    st.title("📦 Stock Zero")
+    st.markdown("### Sistema de Gestión de Inventario")
+    st.markdown("---")
+    
+    # Navegación
+    st.markdown("### 🧭 Navegación")
+    
+    opciones_menu = [
+        "🚀 Optimización de Inventario",
+        "🛒 Control de Inventario Básico"
+    ]
+    
+    if RECIPES_AVAILABLE:
+        opciones_menu.append("👨‍🍳 Recetas y Productos")
+    
+    pagina = st.radio(
+        "Selecciona una sección:",
+        opciones_menu,
+        label_visibility="collapsed"
+    )
+    
+    st.markdown("---")
+    
+    # Configuración (solo visible en página de Optimización)
+    if pagina == "🚀 Optimización de Inventario":
+        st.markdown("### ⚙️ Configuración del Análisis")
+        lead_time = st.slider("Lead Time (días)", 1, 30, 7, 
+                              help="Días que tarda tu proveedor en entregar")
+        stock_seguridad = st.slider("Stock de Seguridad (días)", 1, 10, 3,
+                                    help="Días adicionales de inventario como buffer")
+        frecuencia = st.selectbox(
+            "Estacionalidad", 
+            [7, 14, 30], 
+            index=0,
+            format_func=lambda x: f"{x} días ({'Semanal' if x==7 else 'Mensual' if x==30 else 'Quincenal'})",
+            help="Patrón de repetición de ventas"
+        )
+    else:
+        # Valores por defecto cuando no estamos en Optimización
+        lead_time = 7
+        stock_seguridad = 3
+        frecuencia = 7
+    
+    st.markdown("---")
+    
+    # Información del sistema
+    st.markdown("### ℹ️ Información")
+    st.caption(f"📅 {datetime.now().strftime('%d/%m/%Y')}")
+    st.caption("🌐 Usuario: Demo")
 
-# === CARGAR DATOS DEL USUARIO ===
-@st.cache_data(ttl=60)
-def load_data():
-    try:
-        ventas = supabase.table("ventas").select("*").eq("user_id", st.session_state.user_id).execute()
-        stock = supabase.table("stock").select("*").eq("user_id", st.session_state.user_id).execute()
-        return pd.DataFrame(ventas.data), pd.DataFrame(stock.data)
-    except Exception as e:
-        st.error(f"Error cargando datos: {e}")
-        return pd.DataFrame(), pd.DataFrame()
+# ============================================
+# INICIALIZAR SESSION STATE
+# ============================================
 
-df_ventas, df_stock = load_data()
-st.session_state.df_ventas = df_ventas
-st.session_state.df_stock = df_stock
+if 'df_ventas_trazabilidad' not in st.session_state:
+    st.session_state['df_ventas_trazabilidad'] = pd.DataFrame(columns=['fecha', 'producto', 'cantidad_vendida'])
+if 'df_stock_trazabilidad' not in st.session_state:
+    st.session_state['df_stock_trazabilidad'] = pd.DataFrame(columns=['fecha', 'producto', 'cantidad_recibida']) 
+if 'inventario_df' not in st.session_state:
+    st.session_state['inventario_df'] = generar_inventario_base(None, use_example_data=True)
 
-# === DASHBOARD ===
-st.title("Stock Zero")
-st.header("Main Dashboard")
+# ============================================
+# CONTENIDO PRINCIPAL SEGÚN PÁGINA SELECCIONADA
+# ============================================
 
-if df_ventas.empty:
-    st.info("Sube datos en **Archivos** para ver el dashboard.")
-else:
-    df_ventas['fecha'] = pd.to_datetime(df_ventas['fecha'], errors='coerce')
-    ventas_hist = df_ventas.groupby('fecha')['cantidad_vendida'].sum()
+if pagina == "🚀 Optimización de Inventario":
+    st.header("🚀 Optimización de Inventario (Pronóstico)")
+    st.markdown("Analiza tus datos históricos de ventas para calcular puntos de reorden óptimos.")
+    st.markdown("---")
+    
+    # --- Sección de Ejemplos y Formatos (CORREGIDA) ---
+    with st.expander("📘 Guía de Formatos y Ejemplos de Archivos", expanded=False):
+        st.markdown("### 📊 Formatos Aceptados")
+        
+        col_guia1, col_guia2 = st.columns(2)
+        
+        with col_guia1:
+            st.markdown("#### 📈 Archivo de Ventas (Requerido)")
+            
+            # Formato Largo
+            st.markdown("**Formato 1: Largo (Recomendado)**")
+            ejemplo_ventas_largo = generar_ejemplo_ventas().head(5)
+            st.dataframe(
+                ejemplo_ventas_largo,
+                use_container_width=True,
+                hide_index=True
+            )
+            st.caption("↓ Descarga el archivo completo de ejemplo")
+            csv_ventas = generar_ejemplo_ventas().to_csv(index=False)
+            st.download_button(
+                label="⬇️ Descargar Ejemplo (Formato Largo)",
+                data=csv_ventas,
+                file_name="ejemplo_ventas_largo.csv",
+                mime="text/csv",
+                key="download_ventas_largo"
+            )
+            
+            st.markdown("---")
+            
+            # Formato Ancho
+            st.markdown("**Formato 2: Ancho**")
+            ejemplo_ventas_ancho = generar_ejemplo_ventas_ancho().head(5)
+            st.dataframe(
+                ejemplo_ventas_ancho,
+                use_container_width=True,
+                hide_index=True
+            )
+            st.caption("↓ Descarga el archivo completo de ejemplo")
+            csv_ventas_ancho = ejemplo_ventas_ancho.to_csv(index=False)
+            st.download_button(
+                label="⬇️ Descargar Ejemplo (Formato Ancho)",
+                data=csv_ventas_ancho,
+                file_name="ejemplo_ventas_ancho.csv",
+                mime="text/csv",
+                key="download_ventas_ancho"
+            )
+        
+        with col_guia2:
+            st.markdown("#### 📦 Archivo de Entradas de Stock (Opcional)")
+            st.markdown("**Formato: Largo**")
+            
+            ejemplo_stock = generar_ejemplo_stock()
+            st.dataframe(
+                ejemplo_stock,
+                use_container_width=True,
+                hide_index=True
+            )
+            st.info("💡 **Nota:** Este archivo es opcional pero mejora la precisión del análisis de trazabilidad.")
+            
+            csv_stock = ejemplo_stock.to_csv(index=False)
+            st.download_button(
+                label="⬇️ Descargar Ejemplo de Stock",
+                data=csv_stock,
+                file_name="ejemplo_stock.csv",
+                mime="text/csv",
+                key="download_stock"
+            )
+        
+        st.markdown("---")
+        st.markdown("### ✅ Requisitos Importantes")
+        st.markdown("""
+        - **Fechas:** Formato `YYYY-MM-DD` (ejemplo: 2024-01-15)
+        - **Columnas:** No usar espacios adicionales ni caracteres especiales
+        - **Cantidades:** Solo números positivos
+        - **Codificación:** UTF-8 (estándar para CSV)
+        - **Separador:** Coma (`,`)
+        """)
+    
+    # --- Carga de Archivos ---
+    st.markdown("### 1️⃣ Sube tus archivos")
+    
+    col_ventas, col_stock = st.columns(2)
+    
+    uploaded_file_ventas = col_ventas.file_uploader(
+        "📈 Archivo CSV de **Ventas Históricas** (Requerido)",
+        type=['csv'],
+        key="upload_ventas",
+        help="Carga un archivo CSV con tus datos de ventas. Puedes descargar un ejemplo arriba."
+    )
+    
+    uploaded_file_stock = col_stock.file_uploader(
+        "📦 Archivo CSV de **Entradas de Stock** (Opcional)",
+        type=['csv'],
+        key="upload_stock",
+        help="Opcional: Carga un archivo CSV con el historial de entradas de stock para mejor trazabilidad."
+    )
 
-    fig = go.Figure()
-    fig.add_trace(go.Bar(x=ventas_hist.index, y=ventas_hist.values, name="Ventas", marker_color="#4361EE"))
-    if not df_stock.empty:
-        fig.add_hline(y=df_stock['cantidad_recibida'].sum(), line_dash="dash", line_color="#4CC9F0", annotation_text="Stock Actual")
-    fig.add_hline(y=100, line_dash="dot", line_color="#FF6B6B", annotation_text="PR = 100")
-    fig.update_layout(title="Flujo de Inventario", height=500)
-    st.plotly_chart(fig, use_container_width=True)
+    # Procesar archivo de VENTAS
+    df_ventas = None
+    if uploaded_file_ventas is not None:
+        try:
+            df_raw_ventas = pd.read_csv(uploaded_file_ventas)
+            
+            # Detección de formato y pre-procesamiento de VENTAS
+            if 'producto' not in df_raw_ventas.columns and len(df_raw_ventas.columns) > 2:
+                df_ventas = df_raw_ventas.melt(id_vars=['fecha'], var_name='producto', value_name='cantidad_vendida')
+                formato_detectado = "ancho"
+            elif 'producto' in df_raw_ventas.columns and 'cantidad_vendida' in df_raw_ventas.columns:
+                df_ventas = df_raw_ventas.copy()
+                formato_detectado = "largo"
+            else:
+                st.error("❌ Formato de VENTAS no reconocido. Revisa la guía de formatos arriba.")
+                st.stop()
+            
+            # Limpieza robusta de datos de ventas
+            df_ventas['fecha'] = pd.to_datetime(df_ventas['fecha'], errors='coerce')
+            df_ventas = df_ventas.dropna(subset=['fecha'])
+            df_ventas['fecha'] = df_ventas['fecha'].dt.normalize()
+            df_ventas['cantidad_vendida'] = pd.to_numeric(df_ventas['cantidad_vendida'], errors='coerce').fillna(0)
+            
+            # Procesar archivo de STOCK
+            df_stock = pd.DataFrame(columns=['fecha', 'producto', 'cantidad_recibida']) 
+            if uploaded_file_stock is not None:
+                try:
+                    df_raw_stock = pd.read_csv(uploaded_file_stock)
+                    
+                    # Validar columnas requeridas
+                    columnas_requeridas = ['fecha', 'producto', 'cantidad_recibida']
+                    columnas_presentes = df_raw_stock.columns.str.strip().str.lower()
+                    columnas_normalizadas = {col.lower(): col for col in df_raw_stock.columns}
+                    
+                    if all(col in columnas_normalizadas for col in columnas_requeridas):
+                        # Renombrar columnas si es necesario
+                        df_raw_stock = df_raw_stock.rename(columns={
+                            columnas_normalizadas['fecha']: 'fecha',
+                            columnas_normalizadas['producto']: 'producto',
+                            columnas_normalizadas['cantidad_recibida']: 'cantidad_recibida'
+                        })
+                        
+                        df_stock = df_raw_stock[['fecha', 'producto', 'cantidad_recibida']].copy()
+                        df_stock['fecha'] = pd.to_datetime(df_stock['fecha'], errors='coerce')
+                        df_stock = df_stock.dropna(subset=['fecha'])
+                        df_stock['fecha'] = df_stock['fecha'].dt.normalize()
+                        df_stock['cantidad_recibida'] = pd.to_numeric(df_stock['cantidad_recibida'], errors='coerce').fillna(0)
+                        st.success("✅ Historial de Entradas de Stock cargado correctamente.")
+                    else:
+                        st.warning(f"""
+                        ⚠️ **El archivo de STOCK no contiene las columnas esperadas.**
+                        
+                        **Columnas encontradas:** {', '.join(df_raw_stock.columns)}
+                        
+                        **Columnas requeridas:** fecha, producto, cantidad_recibida
+                        
+                        💡 Descarga el ejemplo de formato correcto arriba en la guía.
+                        """)
+                        df_stock = pd.DataFrame(columns=['fecha', 'producto', 'cantidad_recibida'])
 
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        hoy = ventas_hist.iloc[-1] if len(ventas_hist) > 0 else 0
-        st.metric("Ventas Hoy", f"{hoy:.0f}")
-    with col2:
-        total = df_stock['cantidad_recibida'].sum() if not df_stock.empty else 0
-        st.metric("Stock Total", f"{total:.0f}")
-    with col3:
-        criticos = len(df_stock[df_stock['cantidad_recibida'] < 10]) if not df_stock.empty else 0
-        st.metric("Productos Críticos", criticos)
-    with col4:
-        valor = (df_stock['cantidad_recibida'] * df_stock.get('costo_unitario', 10)).sum() if not df_stock.empty else 0
-        st.metric("Valor Inventario", f"${valor:,.0f}")
+                except Exception as e:
+                    st.error(f"❌ Error al procesar el archivo de STOCK: {str(e)}")
+                    st.info("💡 Descarga el archivo de ejemplo para ver el formato correcto.")
+                    df_stock = pd.DataFrame(columns=['fecha', 'producto', 'cantidad_recibida'])
 
-st.success("Dashboard activo.")
+            # --- Guardar DataFrames en session_state ---
+            st.session_state['df_ventas_trazabilidad'] = df_ventas
+            st.session_state['df_stock_trazabilidad'] = df_stock
+            
+            # Reinicio de Inventario si se detectan datos nuevos
+            example_products = set(['Café en Grano (Kg)', 'Leche Entera (Litros)', 'Pan Hamburguesa (Uni)'])
+            if 'inventario_df' in st.session_state:
+                current_products = set(st.session_state['inventario_df']['Producto'].tolist())
+                if example_products.issubset(current_products):
+                    st.session_state['inventario_df'] = generar_inventario_base(df_ventas, use_example_data=False)
+            else:
+                 st.session_state['inventario_df'] = generar_inventario_base(df_ventas)
+                
+            st.markdown("### 2️⃣ Resumen de Datos Cargados")
+            
+            col1, col2, col3, col4 = st.columns(4)
+            with col1: st.metric("📁 Formato Ventas", formato_detectado.upper())
+            with col2: st.metric("📦 Productos únicos", df_ventas['producto'].nunique())
+            with col3: st.metric("📅 Total registros", len(df_ventas))
+            with col4: st.metric("📊 Días de datos", (df_ventas['fecha'].max() - df_ventas['fecha'].min()).days + 1)
+            
+            productos = sorted(df_ventas['producto'].unique())
+            st.markdown(f"**Productos encontrados:** {', '.join(productos)}")
+            
+            st.markdown("### 3️⃣ Calcular Inventario Óptimo")
+            
+            # El botón llama a la función modular de cálculo
+            if st.button("🚀 Calcular para TODOS los productos", type="primary", use_container_width=True):
+                with st.spinner(f"Analizando {len(productos)} productos..."):
+                    df_resultados = procesar_multiple_productos(
+                        df_ventas,
+                        lead_time,
+                        stock_seguridad,
+                        frecuencia
+                    )
+                
+                st.session_state['df_resultados'] = df_resultados
+                st.rerun()
+
+            # --- SECCIÓN DE RESULTADOS ---
+            if 'df_resultados' in st.session_state:
+                df_resultados = st.session_state['df_resultados']
+                df_exitosos = df_resultados[df_resultados['error'].isnull()].sort_values('cantidad_a_ordenar', ascending=False)
+                
+                st.markdown("---")
+                st.markdown("## 📊 Resultados del Análisis")
+                
+                if not df_exitosos.empty:
+                    st.success(f"✅ Se analizaron exitosamente {len(df_exitosos)} productos.")
+                    
+                    # Métricas resumidas
+                    total_reorden = df_exitosos['punto_reorden'].sum()
+                    total_ordenar = df_exitosos['cantidad_a_ordenar'].sum()
+                    col1, col2 = st.columns(2)
+                    with col1: st.metric("🎯 Total Punto de Reorden", f"{total_reorden:.0f} unidades")
+                    with col2: st.metric("📦 Total a Ordenar", f"{total_ordenar:.0f} unidades")
+                    
+                    # TABLA ABC y Recomendaciones
+                    st.markdown("### 📋 Recomendaciones y Clasificación ABC")
+                    df_display = df_exitosos[['producto', 'clasificacion_abc', 'punto_reorden', 'cantidad_a_ordenar']].copy()
+                    df_display.columns = ['Producto', 'ABC', 'Punto de Reorden', 'Cantidad a Ordenar']
+                    df_display['Punto de Reorden'] = df_display['Punto de Reorden'].apply(lambda x: f"{x:.0f}")
+                    df_display['Cantidad a Ordenar'] = df_display['Cantidad a Ordenar'].apply(lambda x: f"{x:.0f}")
+                    st.dataframe(df_display, use_container_width=True, hide_index=True)
+                    
+                    # Gráfico de Trazabilidad
+                    st.markdown("---")
+                    st.markdown("### 📈 Trazabilidad de Inventario (Simulación de PR)")
+                    
+                    producto_seleccionado_inv = st.selectbox(
+                        "Selecciona un producto para ver la simulación de stock y órdenes:",
+                        options=df_exitosos['producto'].tolist(),
+                        key="selector_inventario_proyectado" 
+                    )
+                    
+                    if producto_seleccionado_inv:
+                        resultado_prod = df_exitosos[df_exitosos['producto'] == producto_seleccionado_inv].iloc[0].to_dict()
+                        
+                        # Obtener Stock Actual
+                        df_inv_basico = st.session_state.get('inventario_df', pd.DataFrame())
+                        stock_actual = 0.0
+                        mensaje_stock = "⚠️ **Stock Inicial/Actual no cargado.** Usando Stock = 0. ¡Actualiza el Stock Actual en Control de Inventario Básico!"
+                        
+                        if not df_inv_basico.empty and 'Producto' in df_inv_basico.columns:
+                            stock_row = df_inv_basico[df_inv_basico['Producto'] == producto_seleccionado_inv]
+                            if not stock_row.empty:
+                                try:
+                                    stock_actual = float(stock_row['Stock Actual'].iloc[0])
+                                    mensaje_stock = f"Stock Inicial/Actual: **{stock_actual:.2f}** (tomado de Control de Inventario Básico)."
+                                except:
+                                    stock_actual = 0.0
+                        
+                        st.info(mensaje_stock)
+
+                        # LLAMADA AL MÓDULO TRAZABILITY
+                        try:
+                            df_trazabilidad = calcular_trazabilidad_inventario(
+                                st.session_state['df_ventas_trazabilidad'],
+                                st.session_state['df_stock_trazabilidad'],
+                                producto_seleccionado_inv,
+                                stock_actual,
+                                resultado_prod['punto_reorden'],
+                                resultado_prod['cantidad_a_ordenar'],
+                                resultado_prod['pronostico_diario_promedio'],
+                                lead_time
+                            )
+
+                            if df_trazabilidad is not None and not df_trazabilidad.empty:
+                                # LLAMADA AL MÓDULO COMPONENTS (Gráfico)
+                                fig_trazabilidad = crear_grafico_trazabilidad_total(
+                                    df_trazabilidad,
+                                    resultado_prod,
+                                    lead_time
+                                )
+                                st.pyplot(fig_trazabilidad)
+                            else:
+                                st.error(f"❌ No se pudo generar la trazabilidad para {producto_seleccionado_inv}.")
+                        
+                        except Exception as e:
+                            st.error(f"❌ Error al generar la trazabilidad: {str(e)}")
+
+                    # Gráfico Comparativo
+                    st.markdown("---")
+                    st.markdown("### 📊 Tendencias de Ventas (Visión General)")
+                    fig_comparativo = crear_grafico_comparativo(df_exitosos.to_dict('records'))
+                    st.pyplot(fig_comparativo)
+            
+                else:
+                    st.info("ℹ️ No se pudo calcular la optimización para ningún producto. Verifica que tengas suficientes datos históricos.")
+
+            else:
+                 st.info("👆 Haz clic en 'Calcular para TODOS los productos' para ver los resultados del análisis.")
+
+        except Exception as e:
+            st.error(f"❌ Error al procesar el archivo: {str(e)}")
+            st.info("💡 Descarga un archivo de ejemplo de la guía de formatos para verificar la estructura correcta.")
+            st.stop()
+    else:
+        st.info("📂 Sube tu archivo de ventas para comenzar el análisis. Puedes descargar ejemplos en la guía de formatos arriba.")
+
+# ============================================
+# PÁGINA: CONTROL DE INVENTARIO BÁSICO
+# ============================================
+elif pagina == "🛒 Control de Inventario Básico":
+    inventario_basico_app()
+
+# ============================================
+# PÁGINA: RECETAS Y PRODUCTOS
+# ============================================
+elif pagina == "👨‍🍳 Recetas y Productos":
+    if RECIPES_AVAILABLE:
+        recetas_app()
+    else:
+        st.error("⚠️ El módulo de recetas no está disponible.")
+        st.info("Crea el archivo `modules/recipes.py` para habilitar esta funcionalidad.")
