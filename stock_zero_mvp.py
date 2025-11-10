@@ -3,10 +3,24 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import timedelta
-from modules.analytics import analytics_app  # Importamos aquí
 
 st.set_page_config(page_title="Stock Zero", layout="wide")
 
+# === SIDEBAR CON CONFIGURACIÓN ===
+with st.sidebar:
+    st.image("https://via.placeholder.com/100", caption="Stock Zero", width=100)
+    st.markdown("### Navegación")
+    st.markdown("- [Home](stock_zero_mvp.py)")
+    st.markdown("- [Archivos](pages/1_Archivos.py)")
+    st.markdown("- [Inventario](pages/2_Inventario.py)")
+    st.markdown("- [Análisis](pages/3_Analisis.py)")
+    st.markdown("- [Productos](pages/4_Productos.py)")
+    
+    st.markdown("---")
+    st.markdown("### Configuración Estacional")
+    st.session_state.lead_time = st.slider("Lead Time (días)", 1, 30, 7)
+    st.session_state.stock_seguridad_dias = st.slider("Stock Seguridad (días)", 0, 10, 3)
+    st.session_state.cantidad_minima = st.number_input("Cantidad Mínima por Pedido", min_value=1, value=50)
 
 st.title("Stock Zero")
 st.markdown("---")
@@ -21,32 +35,22 @@ if 'df_ventas' not in st.session_state or st.session_state.df_ventas is None:
 df_ventas = st.session_state.df_ventas.copy()
 df_stock = st.session_state.get('df_stock', pd.DataFrame())
 
-# === CALCULAR RESULTADOS SI NO EXISTEN ===
+# === RECALCULAR RESULTADOS ===
 if 'df_resultados' not in st.session_state:
-    try:
-        from modules.core_analysis import procesar_multiple_productos
-        st.session_state.df_resultados = procesar_multiple_productos(
-            st.session_state.df_ventas, 
-            st.session_state.get('df_stock', pd.DataFrame())
-        )
-    except Exception as e:
-        st.error(f"Error procesando datos: {e}")
-        st.stop()
-
-# === GRÁFICO DE FLUJO (SIN UCL/LCL) ===
-st.markdown("### Flujo de Inventario (Stock vs Ventas vs PR)")
-# Al inicio del gráfico en stock_zero_mvp.py
-if 'df_resultados' not in st.session_state:
-    with st.spinner("Calculando análisis..."):
+    with st.spinner("Procesando datos..."):
         from modules.core_analysis import procesar_multiple_productos
         st.session_state.df_resultados = procesar_multiple_productos(
             st.session_state.df_ventas,
             st.session_state.get('df_stock', pd.DataFrame())
         )
+
+# === GRÁFICO DE FLUJO ===
+st.markdown("### Flujo de Inventario")
+
 try:
-    # Ejecutar analytics_app() para obtener df_sim y PR
+    from modules.analytics import analytics_app
     with st.container():
-        analytics_app()  # Esto genera df_sim y PR en session_state
+        analytics_app()  # Genera df_sim y PR
 
     df_sim = st.session_state.get('df_sim')
     PR = st.session_state.get('PR', 100)
@@ -56,16 +60,13 @@ try:
 
     fig = go.Figure()
     fig.add_trace(go.Bar(x=ventas_hist.index, y=ventas_hist.values, name="Ventas", marker_color="#4361EE"))
-    
     if df_sim is not None and not df_sim.empty:
         fig.add_trace(go.Scatter(x=df_sim['fecha'], y=df_sim['stock'], mode='lines', name="Stock", line=dict(color="#4CC9F0", width=3)))
-    
     fig.add_hline(y=PR, line_dash="dash", line_color="#FF6B6B", annotation_text=f"PR = {PR}")
-
     fig.update_layout(title="Flujo: Ventas + Stock + Punto de Reorden", height=500)
     st.plotly_chart(fig, use_container_width=True)
 except Exception as e:
-    st.error(f"Error en gráfico: {e}")
+    st.error(f"Error: {e}")
 
 # === KPIs ===
 col1, col2, col3, col4 = st.columns(4)
