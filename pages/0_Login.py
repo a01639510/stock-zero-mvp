@@ -21,25 +21,25 @@ with col1:
         password = st.text_input("Contraseña", type="password")
         if st.form_submit_button("Login"):
             try:
-                # ← CORRECTO: devuelve (data, error)
                 response = supabase.auth.sign_in_with_password({
                     "email": email,
                     "password": password
                 })
-                data, error = response  # data = Session, error = None
+                data, error = response
 
                 if error:
                     st.error(f"Error: {str(error)}")
-                elif data and data.user:  # ← ¡ÉXITO!
+                elif data and data.user:
+                    # ¡ÉXITO!
                     st.session_state.user = data.user
                     st.session_state.user_id = data.user.id
-                    st.session_state.session = data  # Opcional: guardar sesión completa
+                    st.session_state.access_token = data.access_token
                     st.success("¡Login exitoso!")
                     st.rerun()
                 else:
-                    st.error("No se pudo iniciar sesión")
+                    st.error("Credenciales incorrectas")
             except Exception as e:
-                st.error(f"Error inesperado: {str(e)}")
+                st.error(f"Error: {str(e)}")
 
 # === REGISTRO ===
 with col2:
@@ -71,7 +71,7 @@ with col2:
 
 # === LOGOUT ===
 if "user" in st.session_state:
-    st.sidebar.success(f"Usuario: {st.session_state.user.email}")
+    st.sidebar.success(f"Bienvenido, {st.session_state.user.email}")
     if st.sidebar.button("Cerrar Sesión"):
         try:
             supabase.auth.sign_out()
