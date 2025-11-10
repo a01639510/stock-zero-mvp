@@ -4,12 +4,11 @@ from supabase import create_client
 
 st.set_page_config(page_title="Login - Stock Zero")
 
-# === LEE SECRETS CORRECTAMENTE ===
+# === CONEXIÓN ===
 supabase_url = st.secrets["supabase"]["url"]
 supabase_key = st.secrets["supabase"]["key"]
 supabase = create_client(supabase_url, supabase_key)
 
-# ... resto del código (login, signup, logout)
 st.title("Stock Zero - Login")
 
 col1, col2 = st.columns(2)
@@ -22,26 +21,24 @@ with col1:
         password = st.text_input("Contraseña", type="password")
         if st.form_submit_button("Login"):
             try:
-                # ← CORRECTO: devuelve (data, error)
+                # Devuelve (data, error)
                 response = supabase.auth.sign_in_with_password({
                     "email": email,
                     "password": password
                 })
-                
-                # Desempaquetar correctamente
                 data, error = response
-                
+
                 if error:
-                    st.error(f"Error: {error.message}")
+                    st.error(f"Error: {str(error)}")
                 elif data and data.user:
                     st.session_state.user = data.user
                     st.session_state.user_id = data.user.id
                     st.success("¡Login exitoso!")
                     st.rerun()
                 else:
-                    st.error("No se pudo iniciar sesión")
+                    st.error("Credenciales incorrectas")
             except Exception as e:
-                st.error(f"Error inesperado: {e}")
+                st.error(f"Error inesperado: {str(e)}")
 
 # === REGISTRO ===
 with col2:
@@ -63,17 +60,21 @@ with col2:
                         "password": password
                     })
                     data, error = response
+
                     if error:
-                        st.error(f"Error: {error.message}")
+                        st.error(f"Error: {str(error)}")
                     else:
                         st.success("¡Cuenta creada! Ya puedes iniciar sesión.")
                 except Exception as e:
-                    st.error(f"Error: {e}")
+                    st.error(f"Error: {str(e)}")
 
 # === LOGOUT ===
 if "user" in st.session_state:
     st.sidebar.success(f"Usuario: {st.session_state.user.email}")
     if st.sidebar.button("Cerrar Sesión"):
-        supabase.auth.sign_out()
+        try:
+            supabase.auth.sign_out()
+        except:
+            pass
         st.session_state.clear()
         st.rerun()
