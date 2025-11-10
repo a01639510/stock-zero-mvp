@@ -3,7 +3,22 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import timedelta
+# === AUTH CHECK ===
+if "user" not in st.session_state or st.session_state.user is None:
+    st.warning("Por favor, inicia sesión.")
+    st.stop()
 
+# === CARGAR DATOS DEL USUARIO ===
+conn = st.connection("supabase", type=SupabaseConnection)
+
+data = conn.table("ventas").select("*").eq("user_id", st.session_state.user_id).execute()
+st.session_state.df_ventas = pd.DataFrame(data.data)
+
+data_stock = conn.table("stock").select("*").eq("user_id", st.session_state.user_id).execute()
+st.session_state.df_stock = pd.DataFrame(data_stock.data)
+
+# === TU CÓDIGO ORIGINAL (dashboard, gráficos, etc.) ===
+# ... (todo lo demás permanece igual)
 st.set_page_config(page_title="Stock Zero", layout="wide")
 
 # === SIDEBAR CON CONFIGURACIÓN ===
