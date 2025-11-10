@@ -1,241 +1,231 @@
 # modules/components.py
-import pandas as pd
+
 import streamlit as st
+import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from datetime import datetime
-from typing import Dict, List  # ← IMPORTS CORRECTOS
+from typing import Dict, List, Union
 
 # ============================================
-# 1. GENERAR INVENTARIO BASE
+# FUNCIONES AUXILIARES
 # ============================================
-def generar_inventario_base(df_ventas=None, use_example_data=False):
-    """
-    Genera inventario base a partir de ventas o ejemplo
-    """
-    if use_example_data or df_ventas is None:
-        return pd.DataFrame({
-            'Producto': ['Café en Grano (Kg)', 'Leche Entera (Litros)', 'Pan Hamburguesa (Uni)'],
-            'Stock Actual': [50, 100, 200],
-            'Unidad': ['kg', 'litros', 'unidades'],
-            'Punto de Reorden (PR)': [0, 0, 0],
-            'Cantidad a Ordenar': [0, 0, 0],
-            'Costo Unitario': [50, 30, 25]
-        })
+
+def generar_inventario_base(df_ventas: pd.DataFrame = None, use_example_data: bool = False) -> pd.DataFrame:
+    """Genera un DataFrame base para el inventario, usando productos de ventas o datos de ejemplo."""
+    productos_de_ventas = []
+    if df_ventas is not None:
+        productos_de_ventas = sorted(df_ventas['producto'].unique().tolist())
+        
+    if use_example_data and not productos_de_ventas:
+        productos_base = ['Café en Grano (Kg)', 'Leche Entera (Litros)', 'Pan Hamburguesa (Uni)']
+        stock_init = 50.0; pr_init = 10.0; costo_init = 5.0; orden_init = 20.0
     else:
-        productos = df_ventas['producto'].unique()
-        inventario = []
-        for prod in productos:
-            ventas_total = df_ventas[df_ventas['producto'] == prod]['cantidad_vendida'].sum()
-            stock_inicial = max(ventas_total * 2, 50)  # Mínimo 50
-            stock_actual = max(stock_inicial - ventas_total, 0)
-            inventario.append({
-                'Producto': prod,
-                'Stock Actual': stock_actual,
-                'Unidad': 'unidades',
-                'Punto de Reorden (PR)': 0,
-                'Cantidad a Ordenar': 0,
-                'Costo Unitario': 50  # Valor por defecto
-            })
-        return pd.DataFrame(inventario)
+        productos_base = productos_de_ventas if productos_de_ventas else []
+        stock_init = 0.0; pr_init = 0.0; costo_init = 1.0; orden_init = 0.0
 
-# ============================================
-# 2. SINCRONIZAR PUNTOS ÓPTIMOS
-# ============================================
+    if not productos_base: return pd.DataFrame()
+
+    data = {
+        'Producto': productos_base, 'Categoría': ['Insumo'] * len(productos_base),
+        'Unidad': ['UNI'] * len(productos_base), 'Stock Actual': [stock_init] * len(productos_base),
+        'Punto de Reorden (PR)': [pr_init] * len(productos_base), 
+        'Cantidad a Ordenar': [orden_init] * len(productos_base),
+        'Costo Unitario': [costo_init] * len(productos_base),
+    }
+    df = pd.DataFrame(data)
+    
+    df['Unidad'] = np.select(
+        [df['Producto'].astype(str).str.contains(r'\(Kg\)', na=False, case=False),
+         df['Producto'].astype(str).str.contains(r'\(L\)', na=False, case=False)],
+        ['KG', 'L'], default='UNI'
+    )
+    
+    df['Faltante?'] = df['Stock Actual'] < df['Punto de Reorden (PR)']
+    df['Valor Total'] = df['Stock Actual'] * df['Costo Unitario']
+    return df
+
 def sincronizar_puntos_optimos(df_inventario: pd.DataFrame, df_resultados: pd.DataFrame) -> pd.DataFrame:
-    """Actualiza PR y Cantidad a Ordenar desde resultados."""
-    if df_resultados is None or df_resultados.empty:
-        return df_inventario
-
+    """Actualiza las columnas 'Punto de Reorden (PR)' y 'Cantidad a Ordenar'."""
     pr_map = df_resultados.set_index('producto')['punto_reorden'].to_dict()
     orden_map = df_resultados.set_index('producto')['cantidad_a_ordenar'].to_dict()
-
-    # Asegurar columnas
+    
     for col in ['Punto de Reorden (PR)', 'Cantidad a Ordenar']:
-        if col not in df_inventario.columns:
-            df_inventario[col] = 0
         df_inventario[col] = pd.to_numeric(df_inventario[col], errors='coerce').fillna(0)
-
+    
     df_inventario['PR Mapeado'] = df_inventario['Producto'].map(pr_map).fillna(0)
     df_inventario['Punto de Reorden (PR)'] = np.where(
-        df_inventario['PR Mapeado'] > 0,
-        df_inventario['PR Mapeado'].round(2),
-        df_inventario['Punto de Reorden (PR)']
+        df_inventario['PR Mapeado'] > 0, df_inventario['PR Mapeado'].round(2), df_inventario['Punto de Reorden (PR)']
     )
     df_inventario = df_inventario.drop(columns=['PR Mapeado'], errors='ignore')
-
+    
     df_inventario['Orden Mapeado'] = df_inventario['Producto'].map(orden_map).fillna(0)
     df_inventario['Cantidad a Ordenar'] = np.where(
-        df_inventario['Orden Mapeado'] > 0,
-        df_inventario['Orden Mapeado'].round(2),
-        df_inventario['Cantidad a Ordenar']
+        df_inventario['Orden Mapeado'] > 0, df_inventario['Orden Mapeado'].round(2), df_inventario['Cantidad a Ordenar']
     )
     df_inventario = df_inventario.drop(columns=['Orden Mapeado'], errors='ignore')
-
-    # Evitar valores muy bajos
+    
     df_inventario['Punto de Reorden (PR)'] = np.where(
         df_inventario['Punto de Reorden (PR)'] < 0.01, 0.0, df_inventario['Punto de Reorden (PR)']
     )
     df_inventario['Cantidad a Ordenar'] = np.where(
         df_inventario['Cantidad a Ordenar'] < 0.01, 0.0, df_inventario['Cantidad a Ordenar']
     )
+
     return df_inventario
 
 # ============================================
-# 3. CONTROL DE INVENTARIO BÁSICO
+# FUNCIONES DE INTERFAZ Y GRÁFICOS
 # ============================================
-def inventario_basico_app():
-    """Interfaz completa de control de inventario."""
-    st.header("Control de Inventario Básico")
 
+def inventario_basico_app():
+    """Componente completo para la interfaz del control de inventario básico."""
+    st.header("🛒 Control de Inventario Básico")
+    
     df_inventario = st.session_state.get('inventario_df')
+
     if df_inventario is None or df_inventario.empty:
         st.warning("El inventario base está vacío. Sube datos en la pestaña de Optimización.")
-        return
+        return 
 
-    # Sincronizar si hay resultados
-    if 'df_resultados' in st.session_state and st.session_state['df_resultados'] is not None:
-        df_resultados = st.session_state['df_resultados']
-        if not df_resultados.empty and 'error' in df_resultados.columns:
-            df_resultados = df_resultados[df_resultados['error'].isnull()]
-        if not df_resultados.empty:
-            df_inventario = sincronizar_puntos_optimos(df_inventario, df_resultados)
-            st.session_state['inventario_df'] = df_inventario
-            st.success("Puntos de reorden y cantidades sincronizados desde Optimización")
-        else:
-            st.info("Calcula en Optimización para sincronizar PR y cantidades.")
-    else:
-        st.info("Calcula en Optimización para sincronizar PR y cantidades.")
+    # Sincronización de datos (si hay resultados)
+    if 'df_resultados' in st.session_state:
+        df_inventario = sincronizar_puntos_optimos(df_inventario, st.session_state['df_resultados'])
+        st.session_state['inventario_df'] = df_inventario
 
     st.subheader("1️⃣ Inventario Actual (Edición en Vivo)")
+    
     edited_df = st.data_editor(
-        df_inventario,
-        use_container_width=True,
-        key="data_editor_inventario",
-        column_config={
-            "Stock Actual": st.column_config.NumberColumn(format="%.2f"),
-            "Punto de Reorden (PR)": st.column_config.NumberColumn(format="%.2f"),
-            "Cantidad a Ordenar": st.column_config.NumberColumn(format="%.2f"),
-            "Costo Unitario": st.column_config.NumberColumn(format="$%.2f")
-        }
+        df_inventario, use_container_width=True, key="data_editor_inventario"
     )
-
+    
     if not edited_df.empty:
-        df_final = edited_df.copy()
-        for col in ['Stock Actual', 'Punto de Reorden (PR)', 'Cantidad a Ordenar', 'Costo Unitario']:
-            df_final[col] = pd.to_numeric(df_final[col], errors='coerce').fillna(0)
-
-        df_final['Faltante?'] = df_final['Stock Actual'] < df_final['Punto de Reorden (PR)']
-        df_final['Valor Total'] = df_final['Stock Actual'] * df_final['Costo Unitario']
-        st.session_state['inventario_df'] = df_final
-
+        try:
+            df_final = edited_df.copy()
+            for col in ['Stock Actual', 'Punto de Reorden (PR)', 'Cantidad a Ordenar', 'Costo Unitario']:
+                df_final.loc[:, col] = pd.to_numeric(df_final[col], errors='coerce').fillna(0)
+            
+            df_final.loc[:, 'Faltante?'] = df_final['Stock Actual'] < df_final['Punto de Reorden (PR)']
+            df_final.loc[:, 'Valor Total'] = df_final['Stock Actual'] * df_final['Costo Unitario']
+            
+            st.session_state['inventario_df'] = df_final
+            
+        except Exception:
+            pass
+    
     df_actual = st.session_state['inventario_df']
+
     st.subheader("2️⃣ Alertas y Totales")
+
     items_faltantes = df_actual[df_actual['Faltante?']]
     total_valor = df_actual['Valor Total'].sum()
-
+    
     col_a, col_b = st.columns(2)
-    with col_a: st.metric("Ítems con Bajo Stock", f"{len(items_faltantes)}")
-    with col_b: st.metric("Valor Total del Inventario", f"${total_valor:,.2f}")
+    with col_a: st.metric("🚨 Ítems con Bajo Stock", f"{len(items_faltantes)}")
+    with col_b: st.metric("💰 Valor Total del Inventario", f"${total_valor:,.2f}")
 
     if not items_faltantes.empty:
-        st.warning("**¡URGENTE!** Ítems por debajo de PR.")
+        st.warning("⚠️ **¡URGENTE!** Ítems por debajo de PR.")
         st.dataframe(
-            items_faltantes[['Producto', 'Stock Actual', 'Punto de Reorden (PR)', 'Cantidad a Ordenar']],
+            items_faltantes[['Producto', 'Stock Actual', 'Punto de Reorden (PR)']],
             use_container_width=True, hide_index=True
         )
-    else:
-        st.success("Todo el inventario está en niveles óptimos.")
+    else: st.success("🎉 Todo el inventario está en niveles óptimos.")
 
     st.markdown("---")
 
-# ============================================
-# 4. GRÁFICO TRAZABILIDAD TOTAL
-# ============================================
+
 def crear_grafico_trazabilidad_total(
-    df_trazabilidad: pd.DataFrame,
-    resultado: Dict,
+    df_trazabilidad: pd.DataFrame, 
+    resultado: Dict, 
     lead_time: int
 ):
-    """Gráfico de trazabilidad con doble eje."""
+    """Crea el gráfico de trazabilidad de Inventario con doble eje para Stock y Demanda."""
     nombre = resultado['producto']
     punto_reorden = resultado['punto_reorden']
     cantidad_a_ordenar = resultado['cantidad_a_ordenar']
     pronostico_diario_promedio = resultado['pronostico_diario_promedio']
-
+    
     fig, ax1 = plt.subplots(figsize=(12, 6))
     ax2 = ax1.twinx()
-
+    
     df_hist = df_trazabilidad[df_trazabilidad['Tipo'] == 'Histórico']
     df_proj = df_trazabilidad[df_trazabilidad['Tipo'] == 'Proyectado']
-
-    # Eje 1: Stock
+    
+    # Eje 1 (Izquierda): STOCK
     ax1.plot(df_hist['Fecha'], df_hist['Stock'], color='#1f77b4', linewidth=3, label='Stock Real Histórico')
-    ax1.plot(df_proj['Fecha'], df_proj['Stock'], color='#ff7f0e', linewidth=2, linestyle='--', label='Stock Proyectado')
-    ax1.axhline(y=punto_reorden, color='red', linestyle='-', linewidth=1.5, alpha=0.8, label=f'PR ({punto_reorden:.0f})')
+    ax1.plot(df_proj['Fecha'], df_proj['Stock'], color='#ff7f0e', linewidth=2, linestyle='--', label='Stock Proyectado (Simulación PR)')
+
+    ax1.axhline(y=punto_reorden, color='red', linestyle='-', linewidth=1.5, alpha=0.8,
+               label=f'Punto de Reorden ({punto_reorden:.0f})')
+               
     stock_maximo = punto_reorden + cantidad_a_ordenar
-    ax1.axhline(y=stock_maximo, color='green', linestyle=':', linewidth=1.5, alpha=0.6, label=f'Stock Máximo ({stock_maximo:.0f})')
+    ax1.axhline(y=stock_maximo, color='green', linestyle=':', linewidth=1.5, alpha=0.6,
+               label=f'Stock Máximo Teórico ({stock_maximo:.0f})')
+    
     ax1.set_ylabel('Stock (Unidades)', color='#1f77b4', fontsize=12)
     ax1.tick_params(axis='y', labelcolor='#1f77b4')
 
-    # Eje 2: Demanda
-    ax2.bar(df_hist['Fecha'], df_hist['Ventas'], color='purple', alpha=0.3, width=1, label='Venta Diaria')
+    # Eje 2 (Derecha): DEMANDA (Ventas + Pronóstico + Órdenes)
+    ax2.bar(df_hist['Fecha'], df_hist['Ventas'], color='purple', alpha=0.3, width=1, label='Venta Diaria Histórica')
+            
     pronostico_fechas = df_proj['Fecha']
     pronostico_valores = [pronostico_diario_promedio] * len(df_proj)
+    
     if not pronostico_fechas.empty:
-        ax2.plot(pronostico_fechas, pronostico_valores, color='purple', linewidth=2, label=f'Pronóstico ({pronostico_diario_promedio:.1f})')
-
-    ordenes_simuladas = df_proj[df_proj['Simulacion_Entradas'] > 0]
+        ax2.plot(pronostico_fechas, pronostico_valores, color='purple', linewidth=2, linestyle='-',
+                label=f'Pronóstico Diario ({pronostico_diario_promedio:.1f})')
+                
+    # Mostrar las órdenes de compra simuladas
+    ordenes_simuladas = df_proj[df_proj['Simulacion_Entradas'] > 0].copy()
+    
     if not ordenes_simuladas.empty:
-        ax2.scatter(ordenes_simuladas['Fecha'], ordenes_simuladas['Simulacion_Entradas'],
-                    color='green', marker='^', s=100, zorder=5, label=f'Entrega ({cantidad_a_ordenar:.0f})')
+        ax2.scatter(ordenes_simuladas['Fecha'], ordenes_simuladas['Simulacion_Entradas'], 
+                    color='green', marker='^', s=100, zorder=5, 
+                    label=f'Entrega de Orden Simulada ({cantidad_a_ordenar:.0f})')
 
-    ax2.set_ylabel('Demanda y Órdenes', color='purple', fontsize=12)
+
+    ax2.set_ylabel('Demanda Diaria y Órdenes', color='purple', fontsize=12)
     ax2.tick_params(axis='y', labelcolor='purple')
     ax2.set_ylim(bottom=0)
-
-    # Configuración
+    
+    # Configuración General
     fecha_actual = datetime.now().date()
-    ax1.axvline(x=fecha_actual, color='gray', linestyle='-.', alpha=0.5, label='Hoy')
-
-    ax1.set_xlabel('Fecha')
-    ax1.set_title(f'{nombre}: Stock, Ventas y Simulación de Órdenes', fontweight='bold')
+    ax1.axvline(x=fecha_actual, color='gray', linestyle='-.', alpha=0.5, label='Fecha Actual')
+    
+    ax1.set_xlabel('Fecha', fontsize=12)
+    ax1.set_title(f'📉 {nombre}: Stock, Ventas y Simulación de Órdenes (PR)', 
+                 fontsize=14, fontweight='bold', pad=15)
+    
     ax1.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-    ax1.xaxis.set_major_locator(mdates.DayLocator(interval=max(1, len(df_trazabilidad) // 10)))
+    ax1.xaxis.set_major_locator(mdates.DayLocator(interval=max(1, len(df_trazabilidad) // 10))) 
     plt.xticks(rotation=45, ha='right')
+    
     ax1.grid(True, alpha=0.3, linestyle='--')
-
+    
     lines1, labels1 = ax1.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
     ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper right', fontsize=9, framealpha=0.9)
+    
     plt.tight_layout()
-
+    
     return fig
 
-# ============================================
-# 5. GRÁFICO COMPARATIVO
-# ============================================
 def crear_grafico_comparativo(resultados: List[Dict]):
-    """Gráfico de volumen total de ventas."""
+    """Crea el gráfico de volumen total de ventas para la visión general."""
     df = pd.DataFrame([r for r in resultados if r.get('error') is None])
     if df.empty:
         fig, ax = plt.subplots(figsize=(10, 5))
-        ax.set_title('No hay datos para comparar.')
+        ax.set_title('No hay datos suficientes para la Visión General.')
         return fig
-
+        
     df_sorted = df.sort_values('volumen_total_vendido', ascending=False)
+
     fig, ax = plt.subplots(figsize=(10, 5))
-    bars = ax.bar(df_sorted['producto'], df_sorted['volumen_total_vendido'], color='skyblue')
-    ax.set_title('Volumen Total de Ventas por Producto', fontweight='bold')
+    ax.bar(df_sorted['producto'], df_sorted['volumen_total_vendido'], color='skyblue')
+    ax.set_title('Volumen Total de Ventas por Producto')
     ax.set_ylabel('Unidades Vendidas')
     ax.tick_params(axis='x', rotation=45)
-
-    # Etiquetas en barras
-    for bar in bars:
-        height = bar.get_height()
-        ax.text(bar.get_x() + bar.get_width()/2., height + height*0.01,
-                f'{int(height)}', ha='center', va='bottom', fontsize=9)
-
     plt.tight_layout()
     return fig
