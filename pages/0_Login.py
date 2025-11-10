@@ -25,22 +25,23 @@ with col1:
                     "email": email,
                     "password": password
                 })
-                data, error = response
-
-                if error:
-                    st.error(f"Error: {str(error)}")
-                elif data and data.user:
-                    # ¡ÉXITO!
-                    st.session_state.user = data.user
-                    st.session_state.user_id = data.user.id
-                    st.session_state.access_token = data.access_token
-                    st.session_state.refresh_token = data.refresh_token
+                
+                # Supabase devuelve el objeto directamente (no una tupla)
+                if hasattr(response, 'user') and response.user:
+                    st.session_state.user = response.user
+                    st.session_state.user_id = response.user.id
+                    
+                    # Session viene dentro del objeto response
+                    if hasattr(response, 'session') and response.session:
+                        st.session_state.access_token = response.session.access_token
+                        st.session_state.refresh_token = response.session.refresh_token
+                    
                     st.success("¡Login exitoso!")
-                    st.rerun()  # ← REDIRIGE AL DASHBOARD
+                    st.rerun()
                 else:
                     st.error("Credenciales incorrectas")
             except Exception as e:
-                st.error(f"Error: {str(e)}")
+                st.error(f"Error de autenticación: {str(e)}")
 
 # === REGISTRO ===
 with col2:
@@ -61,17 +62,16 @@ with col2:
                         "email": email,
                         "password": password
                     })
-                    data, error = response
-
-                    if error:
-                        st.error(f"Error: {str(error)}")
-                    else:
+                    
+                    if response.user:
                         st.success("¡Cuenta creada! Ya puedes iniciar sesión.")
+                    else:
+                        st.error("No se pudo crear la cuenta")
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
 
 # === LOGOUT EN SIDEBAR ===
-if "user" in st.session_state:
+if "user" in st.session_state and st.session_state.user:
     st.sidebar.success(f"Bienvenido, {st.session_state.user.email}")
     if st.sidebar.button("Cerrar Sesión"):
         try:
