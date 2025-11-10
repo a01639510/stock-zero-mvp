@@ -34,8 +34,9 @@ with col1:
                     st.session_state.user = data.user
                     st.session_state.user_id = data.user.id
                     st.session_state.access_token = data.access_token
+                    st.session_state.refresh_token = data.refresh_token
                     st.success("¡Login exitoso!")
-                    st.rerun()
+                    st.rerun()  # ← REDIRIGE AL DASHBOARD
                 else:
                     st.error("Credenciales incorrectas")
             except Exception as e:
@@ -69,7 +70,7 @@ with col2:
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
 
-# === LOGOUT ===
+# === LOGOUT EN SIDEBAR ===
 if "user" in st.session_state:
     st.sidebar.success(f"Bienvenido, {st.session_state.user.email}")
     if st.sidebar.button("Cerrar Sesión"):
