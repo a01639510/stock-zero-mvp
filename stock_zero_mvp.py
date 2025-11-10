@@ -1,10 +1,12 @@
-# stock_zero_mvp.py
+
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import timedelta
 from supabase import create_client
-
+# stock_zero_mvp.py
+st.cache_data.clear()
+st.cache_resource.clear()
 # === CONFIGURACIÓN ===
 st.set_page_config(page_title="Stock Zero", layout="wide")
 
