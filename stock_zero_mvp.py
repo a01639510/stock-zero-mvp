@@ -74,6 +74,7 @@ if not st.session_state.user:
 
     tab1, tab2 = st.tabs(["Iniciar Sesión", "Crear Cuenta"])
     # === LOGIN ===
+    # === LOGIN ===
     with tab1:
         with st.form("login_form"):
             email = st.text_input("Email")
@@ -85,11 +86,11 @@ if not st.session_state.user:
     
                     if error:
                         st.error(f"Error: {str(error)}")
-                    elif data and data.user:
+                    elif data and data.user:  # ¡ÉXITO!
                         st.session_state.user = data.user
                         st.session_state.user_id = data.user.id
                         st.success("¡Login exitoso!")
-                        st.rerun()  # ← ESTO ES LA CLAVE
+                        st.rerun()  # ← REDIRIGE AL DASHBOARD
                     else:
                         st.error("Credenciales incorrectas")
                 except Exception as e:
