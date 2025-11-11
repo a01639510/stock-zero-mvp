@@ -37,7 +37,7 @@ warnings.filterwarnings('ignore')
 # ============================================
 st.set_page_config(
     page_title="Stock Zero",
-    page_icon="Caixa",
+    page_icon=" ",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
