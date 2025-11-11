@@ -50,7 +50,7 @@ def crear_kpi_cards_enhanced(kpis):
         delta_color = "inverse" if kpis['inventario']['productos_criticos'] > 0 else "normal"
         st.metric(
             label="📦 Stock Actual",
-            value=f"{kpis['inventario']['stock_total_actual']:,.0f}",
+            value=f"{kpis['inventario']['stock_total']:,.0f}",
             delta=f"{kpis['inventario']['productos_criticos']} críticos",
             delta_color=delta_color
         )

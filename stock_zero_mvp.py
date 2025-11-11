@@ -94,7 +94,7 @@ with st.sidebar:
     st.markdown("### 🧭 Navegación")
     
     opciones_menu = [
-        "📊 Dashboard Principal",
+        "📊 Dashboard Inteligente",
            "🚀 Optimización de Inventario",
         "🛒 Control de Inventario Básico"
     ]
@@ -152,7 +152,7 @@ if 'inventario_df' not in st.session_state:
 # CONTENIDO PRINCIPAL SEGÚN PÁGINA SELECCIONADA
 # ============================================
 
-if pagina == "📊 Dashboard Principal":
+if pagina == "📊 Dashboard Inteligente":
     # Importar y ejecutar el dashboard
     try:
         from pages._0_Dashboard_Enhanced import dashboard_enhanced_app
