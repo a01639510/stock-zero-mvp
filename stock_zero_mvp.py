@@ -1,4 +1,22 @@
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # stock_zero_mvp_centered.py
 
 import streamlit as st
@@ -123,7 +141,7 @@ st.markdown("---")
 if pagina == "Dashboard Inteligente":
     # Importar y ejecutar el dashboard mejorado
     try:
-        from pages._0_Dashboard_Enhanced import dashboard_enhanced_app
+        from pages._0_Dashboard_Enhanced.py import dashboard_enhanced_app
         dashboard_enhanced_app()
     except ImportError:
         st.error("❌ El módulo del dashboard mejorado no está disponible. Asegúrate de que el archivo 'pages/_0_Dashboard_Enhanced.py' exista.")
