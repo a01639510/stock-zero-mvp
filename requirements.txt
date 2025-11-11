@@ -1,6 +1,5 @@
-streamlit
-pandas
-numpy
-matplotlib
-statsmodels
-plotly.express
+streamlit>=1.36
+supabase>=2.0
+pandas>=1.5
+python-dotenv
+statsmodels>=0.14
