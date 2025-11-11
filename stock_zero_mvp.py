@@ -69,9 +69,6 @@ with col_right:
     # Botón de subir archivos
     if st.button("Subir Archivos", type="primary", use_container_width=True):
         st.session_state.show_upload_modal = True  # Siempre True al hacer clic
-    if st.button("Cerrar", type="secondary"):
-    st.session_state.show_upload_modal = False
-    st.rerun()
 
 # ============================================
 # MODAL DE SUBIDA CON st.dialog
