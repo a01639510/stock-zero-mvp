@@ -67,7 +67,7 @@ st.markdown(
 col_left, col_right = st.columns([8, 2])
 with col_right:
     # Botón de subir archivos
-    if st.button("Subir Archivos", type="primary", use_container_width=True):
+    if st.button("Subir Archivos", type="primary", width='stretch'):
         st.session_state.show_upload_modal = True  # Siempre True al hacer clic
 
 # ============================================
@@ -88,7 +88,7 @@ def upload_modal():
                 'producto': ['Café en Grano (Kg)', 'Leche Entera (Litros)'],
                 'cantidad_vendida': [7, 14]
             })
-            st.dataframe(ejemplo_largo, use_container_width=True, hide_index=True)
+            st.dataframe(ejemplo_largo, width='stretch', hide_index=True)
             st.download_button(
                 "Descargar Ejemplo Largo",
                 ejemplo_largo.to_csv(index=False),
@@ -102,7 +102,7 @@ def upload_modal():
                 'Café en Grano (Kg)': [7],
                 'Leche Entera (Litros)': [14]
             })
-            st.dataframe(ejemplo_ancho, use_container_width=True, hide_index=True)
+            st.dataframe(ejemplo_ancho, width='stretch', hide_index=True)
             st.download_button(
                 "Descargar Ejemplo Ancho",
                 ejemplo_ancho.to_csv(index=False),
@@ -117,7 +117,7 @@ def upload_modal():
                 'producto': ['Café en Grano (Kg)'],
                 'cantidad_recibida': [120]
             })
-            st.dataframe(ejemplo_stock, use_container_width=True, hide_index=True)
+            st.dataframe(ejemplo_stock, width='stretch', hide_index=True)
             st.download_button(
                 "Descargar Ejemplo Stock",
                 ejemplo_stock.to_csv(index=False),
@@ -194,13 +194,13 @@ st.markdown("## Secciones")
 
 cols = st.columns(5)
 with cols[1]:
-    if st.button("Dashboard", use_container_width=True, type="primary"):
+    if st.button("Dashboard", width='stretch', type="primary"):
         st.session_state.pagina_actual = "Dashboard Inteligente"
 with cols[2]:
-    if st.button("Optimización", use_container_width=True):
+    if st.button("Optimización", width='stretch'):
         st.session_state.pagina_actual = "Optimización de Inventario"
 with cols[3]:
-    if st.button("Control Inventario", use_container_width=True):
+    if st.button("Control Inventario", width='stretch'):
         st.session_state.pagina_actual = "Control de Inventario Básico"
 
 # ============================================
