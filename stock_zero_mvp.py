@@ -1,4 +1,4 @@
-```python
+
 # stock_zero_mvp_centered.py
 
 import streamlit as st
