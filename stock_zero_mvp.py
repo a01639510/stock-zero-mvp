@@ -94,7 +94,8 @@ with st.sidebar:
     st.markdown("### 🧭 Navegación")
     
     opciones_menu = [
-        "🚀 Optimización de Inventario",
+        "📊 Dashboard Principal",
+           "🚀 Optimización de Inventario",
         "🛒 Control de Inventario Básico"
     ]
     
@@ -151,7 +152,17 @@ if 'inventario_df' not in st.session_state:
 # CONTENIDO PRINCIPAL SEGÚN PÁGINA SELECCIONADA
 # ============================================
 
-if pagina == "🚀 Optimización de Inventario":
+if pagina == "📊 Dashboard Principal":
+    # Importar y ejecutar el dashboard
+    try:
+        from pages._0_Dashboard_Enhanced import dashboard_enhanced_app
+        dashboard_enhanced_app()
+    except ImportError:
+        st.error("❌ El módulo del dashboard mejorado no está disponible. Asegúrate de que el archivo 'pages/_0_Dashboard_Enhanced.py' exista.")
+    except Exception as e:
+        st.error(f"❌ Error al cargar el dashboard mejorado: {str(e)}")
+
+elif pagina == "🚀 Optimización de Inventario":
     st.header("🚀 Optimización de Inventario (Pronóstico)")
     st.markdown("Analiza tus datos históricos de ventas para calcular puntos de reorden óptimos.")
     st.markdown("---")
