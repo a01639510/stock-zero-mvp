@@ -128,9 +128,16 @@ if st.session_state.show_login:
 # ============================================
 # SIDEBAR LIMPIO (SOLO LOGOUT)
 # ============================================
+# Ocultar sidebar por defecto
+st.markdown("""
+    <style>
+    [data-testid="stSidebarNav"] {display: none;}
+    section[data-testid="stSidebar"] > div {padding-top: 2rem;}
+    </style>
+""", unsafe_allow_html=True)
+
 with st.sidebar:
-    st.markdown("---")
-    st.markdown(f"**Usuario:** {st.session_state.user.email}")
+    st.markdown(f"### 👤 {st.session_state.user.email}")
     st.markdown("---")
     
     if st.button("🚪 Cerrar Sesión", type="secondary", use_container_width=True):
@@ -224,22 +231,24 @@ def upload_modal():
             else:
                 df_ventas = df_raw[['fecha', 'producto', 'cantidad_vendida']].copy()
 
-            # Limpiar datos
+            # Limpiar datos - MANTENER COMO DATETIME
             df_ventas['fecha'] = pd.to_datetime(df_ventas['fecha'], errors='coerce')
             df_ventas = df_ventas.dropna(subset=['fecha'])
             df_ventas['cantidad_vendida'] = pd.to_numeric(df_ventas['cantidad_vendida'], errors='coerce').fillna(0)
             df_ventas = df_ventas[df_ventas['cantidad_vendida'] > 0]  # Filtrar valores válidos
-            
-            # Convertir fecha a string para Supabase
-            df_ventas['fecha'] = df_ventas['fecha'].dt.strftime('%Y-%m-%d')
             df_ventas['user_id'] = user_id
 
-            st.session_state.df_ventas_trazabilidad = df_ventas
+            # Guardar con datetime para el análisis
+            st.session_state.df_ventas_trazabilidad = df_ventas.copy()
             st.success(f"✅ {len(df_ventas)} registros de ventas procesados")
 
             # Guardar en Supabase
             try:
-                data = df_ventas[['user_id', 'fecha', 'producto', 'cantidad_vendida']].to_dict('records')
+                # Crear copia con fechas como string para Supabase
+                df_supabase = df_ventas.copy()
+                df_supabase['fecha'] = df_supabase['fecha'].dt.strftime('%Y-%m-%d')
+                
+                data = df_supabase[['user_id', 'fecha', 'producto', 'cantidad_vendida']].to_dict('records')
                 result = supabase.table("ventas").insert(data).execute()
                 st.success(f"✅ Guardado en Supabase: {len(result.data)} registros")
             except Exception as e:
@@ -253,22 +262,24 @@ def upload_modal():
         try:
             df_stock = pd.read_csv(uploaded_stock)
             
-            # Limpiar datos
+            # Limpiar datos - MANTENER COMO DATETIME
             df_stock['fecha'] = pd.to_datetime(df_stock['fecha'], errors='coerce')
             df_stock = df_stock.dropna(subset=['fecha'])
             df_stock['cantidad_recibida'] = pd.to_numeric(df_stock['cantidad_recibida'], errors='coerce').fillna(0)
             df_stock = df_stock[df_stock['cantidad_recibida'] > 0]
-            
-            # Convertir fecha a string
-            df_stock['fecha'] = df_stock['fecha'].dt.strftime('%Y-%m-%d')
             df_stock['user_id'] = user_id
 
-            st.session_state.df_stock_trazabilidad = df_stock
+            # Guardar con datetime para el análisis
+            st.session_state.df_stock_trazabilidad = df_stock.copy()
             st.success(f"✅ {len(df_stock)} registros de stock procesados")
 
             # Guardar en Supabase
             try:
-                data = df_stock[['user_id', 'fecha', 'producto', 'cantidad_recibida']].to_dict('records')
+                # Crear copia con fechas como string para Supabase
+                df_supabase = df_stock.copy()
+                df_supabase['fecha'] = df_supabase['fecha'].dt.strftime('%Y-%m-%d')
+                
+                data = df_supabase[['user_id', 'fecha', 'producto', 'cantidad_recibida']].to_dict('records')
                 result = supabase.table("stock").insert(data).execute()
                 st.success(f"✅ Guardado en Supabase: {len(result.data)} registros")
             except Exception as e:
@@ -319,6 +330,35 @@ if 'df_stock_trazabilidad' not in st.session_state:
     st.session_state.df_stock_trazabilidad = pd.DataFrame(columns=['fecha', 'producto', 'cantidad_recibida', 'user_id'])
 if 'inventario_df' not in st.session_state:
     st.session_state.inventario_df = generar_inventario_base(use_example_data=True)
+
+# ============================================
+# CARGAR DATOS DEL USUARIO DESDE SUPABASE
+# ============================================
+if 'datos_cargados' not in st.session_state:
+    st.session_state.datos_cargados = False
+
+if not st.session_state.datos_cargados and st.session_state.user:
+    try:
+        user_id = st.session_state.user.id
+        
+        # Cargar ventas
+        response_ventas = supabase.table("ventas").select("*").eq("user_id", user_id).execute()
+        if response_ventas.data:
+            df_ventas = pd.DataFrame(response_ventas.data)
+            df_ventas['fecha'] = pd.to_datetime(df_ventas['fecha'])
+            st.session_state.df_ventas_trazabilidad = df_ventas
+        
+        # Cargar stock
+        response_stock = supabase.table("stock").select("*").eq("user_id", user_id).execute()
+        if response_stock.data:
+            df_stock = pd.DataFrame(response_stock.data)
+            df_stock['fecha'] = pd.to_datetime(df_stock['fecha'])
+            st.session_state.df_stock_trazabilidad = df_stock
+        
+        st.session_state.datos_cargados = True
+        
+    except Exception as e:
+        st.warning(f"No se pudieron cargar datos previos: {str(e)}")
 
 # ============================================
 # PÁGINAS
