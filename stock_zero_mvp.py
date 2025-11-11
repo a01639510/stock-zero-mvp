@@ -1,4 +1,5 @@
-# stock_zero_mvp.py
+```python
+# stock_zero_mvp_centered.py
 
 import streamlit as st
 import pandas as pd
@@ -33,109 +34,74 @@ st.set_page_config(
     page_title="Stock Zero", 
     page_icon="📦", 
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"  # Sin sidebar por defecto
 )
 
 # ============================================
-# FUNCIONES AUXILIARES PARA EJEMPLOS
+# TÍTULO CENTRADO Y NAVEGACIÓN PRINCIPAL
 # ============================================
 
-def generar_ejemplo_ventas():
-    """Genera un DataFrame de ejemplo para ventas."""
-    fechas = pd.date_range(start='2024-01-01', end='2024-01-31', freq='D')
-    datos = []
-    productos = ['Café en Grano (Kg)', 'Leche Entera (Litros)', 'Pan Hamburguesa (Uni)']
-    
-    for fecha in fechas:
-        for producto in productos:
-            cantidad = int(10 + (hash(str(fecha) + producto) % 20))
-            datos.append({
-                'fecha': fecha.strftime('%Y-%m-%d'),
-                'producto': producto,
-                'cantidad_vendida': cantidad
-            })
-    
-    return pd.DataFrame(datos)
+# Título centrado
+st.markdown(
+    """
+    <div style='text-align: center; padding: 2rem 0;'>
+        <h1 style='font-size: 3rem; color: #4361EE; margin-bottom: 0.5rem;'>
+            📦 StockZero
+        </h1>
+        <p style='font-size: 1.2rem; color: #666; margin-top: 0;'>
+            Sistema de Gestión de Inventario
+        </p>
+    </div>
+    """, 
+    unsafe_allow_html=True
+)
 
-def generar_ejemplo_stock():
-    """Genera un DataFrame de ejemplo para entradas de stock."""
-    datos = [
-        {'fecha': '2024-01-05', 'producto': 'Café en Grano (Kg)', 'cantidad_recibida': 50},
-        {'fecha': '2024-01-12', 'producto': 'Leche Entera (Litros)', 'cantidad_recibida': 100},
-        {'fecha': '2024-01-18', 'producto': 'Pan Hamburguesa (Uni)', 'cantidad_recibida': 200},
-        {'fecha': '2024-01-25', 'producto': 'Café en Grano (Kg)', 'cantidad_recibida': 50},
-    ]
-    return pd.DataFrame(datos)
+# Valores de configuración fijos
+lead_time = 7
+stock_seguridad = 3
+frecuencia = 7
 
-def generar_ejemplo_ventas_ancho():
-    """Genera un DataFrame de ejemplo en formato ancho para ventas."""
-    fechas = pd.date_range(start='2024-01-01', end='2024-01-31', freq='D')
-    datos = []
-    
-    for fecha in fechas:
-        fila = {'fecha': fecha.strftime('%Y-%m-%d')}
-        fila['Café en Grano (Kg)'] = int(10 + (hash(str(fecha) + 'cafe') % 15))
-        fila['Leche Entera (Litros)'] = int(15 + (hash(str(fecha) + 'leche') % 20))
-        fila['Pan Hamburguesa (Uni)'] = int(20 + (hash(str(fecha) + 'pan') % 25))
-        datos.append(fila)
-    
-    return pd.DataFrame(datos)
+# Navegación centrada como subtítulos
+st.markdown("---")
+st.markdown("## 🧭 Secciones Disponibles")
 
-# ============================================
-# SIDEBAR CON NAVEGACIÓN Y TÍTULO SIEMPRE VISIBLE
-# ============================================
+# Crear columnas para centrar los botones
+col1, col2, col3, col4, col5 = st.columns([1, 2, 2, 2, 1])
 
-with st.sidebar:
-    st.title("📦 Stock Zero")
-    st.markdown("### Sistema de Gestión de Inventario")
-    st.markdown("---")
-    
-    # Navegación
-    st.markdown("### 🧭 Navegación")
-    
-    opciones_menu = [
-        "📊 Dashboard Inteligente",
-           "🚀 Optimización de Inventario",
-        "🛒 Control de Inventario Básico"
-    ]
-    
-    if RECIPES_AVAILABLE:
-        opciones_menu.append("👨‍🍳 Recetas y Productos")
-    
-    pagina = st.radio(
-        "Selecciona una sección:",
-        opciones_menu,
-        label_visibility="collapsed"
-    )
-    
-    st.markdown("---")
-    
-    # Configuración (solo visible en página de Optimización)
-    if pagina == "🚀 Optimización de Inventario":
-        st.markdown("### ⚙️ Configuración del Análisis")
-        lead_time = st.slider("Lead Time (días)", 1, 30, 7, 
-                              help="Días que tarda tu proveedor en entregar")
-        stock_seguridad = st.slider("Stock de Seguridad (días)", 1, 10, 3,
-                                    help="Días adicionales de inventario como buffer")
-        frecuencia = st.selectbox(
-            "Estacionalidad", 
-            [7, 14, 30], 
-            index=0,
-            format_func=lambda x: f"{x} días ({'Semanal' if x==7 else 'Mensual' if x==30 else 'Quincenal'})",
-            help="Patrón de repetición de ventas"
-        )
-    else:
-        # Valores por defecto cuando no estamos en Optimización
-        lead_time = 7
-        stock_seguridad = 3
-        frecuencia = 7
-    
-    st.markdown("---")
-    
-    # Información del sistema
-    st.markdown("### ℹ️ Información")
-    st.caption(f"📅 {datetime.now().strftime('%d/%m/%Y')}")
-    st.caption("🌐 Usuario: Demo")
+with col2:
+    if st.button("📊 Dashboard Inteligente", use_container_width=True, type="primary"):
+        st.session_state.pagina_actual = "Dashboard Inteligente"
+
+with col3:
+    if st.button("🚀 Optimización de Inventario", use_container_width=True):
+        st.session_state.pagina_actual = "Optimización de Inventario"
+
+with col4:
+    if st.button("📦 Control de Inventario", use_container_width=True):
+        st.session_state.pagina_actual = "Control de Inventario Básico"
+
+if RECIPES_AVAILABLE:
+    col1, col2, col3, col4, col5 = st.columns([2, 1, 2, 1, 2])
+    with col3:
+        if st.button("👨‍🍳 Recetas y Productos", use_container_width=True):
+            st.session_state.pagina_actual = "Recetas y Productos"
+
+# Información del sistema
+st.markdown("---")
+st.markdown(
+    """
+    <div style='text-align: center; color: #666; font-size: 0.9rem;'>
+        📅 {} | 🌐 Usuario: Demo
+    </div>
+    """.format(datetime.now().strftime('%d/%m/%Y')), 
+    unsafe_allow_html=True
+)
+
+# Determinar página actual
+if 'pagina_actual' not in st.session_state:
+    st.session_state.pagina_actual = "Dashboard Inteligente"
+
+pagina = st.session_state.pagina_actual
 
 # ============================================
 # INICIALIZAR SESSION STATE
@@ -152,8 +118,10 @@ if 'inventario_df' not in st.session_state:
 # CONTENIDO PRINCIPAL SEGÚN PÁGINA SELECCIONADA
 # ============================================
 
-if pagina == "📊 Dashboard Inteligente":
-    # Importar y ejecutar el dashboard
+st.markdown("---")
+
+if pagina == "Dashboard Inteligente":
+    # Importar y ejecutar el dashboard mejorado
     try:
         from pages._0_Dashboard_Enhanced import dashboard_enhanced_app
         dashboard_enhanced_app()
@@ -162,7 +130,20 @@ if pagina == "📊 Dashboard Inteligente":
     except Exception as e:
         st.error(f"❌ Error al cargar el dashboard mejorado: {str(e)}")
 
-elif pagina == "🚀 Optimización de Inventario":
+elif pagina == "Optimización de Inventario":
+    st.header("🚀 Optimización de Inventario (Pronóstico)")
+    st.markdown("Analiza tus datos históricos de ventas para calcular puntos de reorden óptimos.")
+    # ... [resto del código de optimización]
+
+elif pagina == "Control de Inventario Básico":
+    inventario_basico_app()
+
+elif pagina == "Recetas y Productos":
+    if RECIPES_AVAILABLE:
+        recetas_app()
+    else:
+        st.error("⚠️ El módulo de recetas no está disponible.")
+```elif pagina == "🚀 Optimización de Inventario":
     st.header("🚀 Optimización de Inventario (Pronóstico)")
     st.markdown("Analiza tus datos históricos de ventas para calcular puntos de reorden óptimos.")
     st.markdown("---")
@@ -473,14 +454,3 @@ elif pagina == "🚀 Optimización de Inventario":
 # PÁGINA: CONTROL DE INVENTARIO BÁSICO
 # ============================================
 elif pagina == "🛒 Control de Inventario Básico":
-    inventario_basico_app()
-
-# ============================================
-# PÁGINA: RECETAS Y PRODUCTOS
-# ============================================
-elif pagina == "👨‍🍳 Recetas y Productos":
-    if RECIPES_AVAILABLE:
-        recetas_app()
-    else:
-        st.error("⚠️ El módulo de recetas no está disponible.")
-        st.info("Crea el archivo `modules/recipes.py` para habilitar esta funcionalidad.")
