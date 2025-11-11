@@ -53,7 +53,7 @@ st.markdown(
     """
     <div style='text-align: center; padding: 2rem 0;'>
         <h1 style='font-size: 3rem; color: #4361EE; margin-bottom: 0.5rem;'>
-            Caixa StockZero
+              StockZero
         </h1>
         <p style='font-size: 1.2rem; color: #666; margin-top: 0;'>
             Sistema de Gestión de Inventario
