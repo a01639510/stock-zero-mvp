@@ -453,4 +453,4 @@ elif pagina == "🚀 Optimización de Inventario":
 # ============================================
 # PÁGINA: CONTROL DE INVENTARIO BÁSICO
 # ============================================
-elif pagina == "🛒 Control de Inventario Básico":
+
