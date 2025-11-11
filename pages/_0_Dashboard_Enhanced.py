@@ -1,5 +1,3 @@
-
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -351,7 +349,12 @@ def dashboard_enhanced_app():
     
     # Verificar datos necesarios
     if 'df_ventas_trazabilidad' not in st.session_state or st.session_state['df_ventas_trazabilidad'].empty:
-        st.warning("⚠️ No hay datos de ventas cargados. Por favor, carga tus datos en **Optimización de Inventario**.")
+        st.warning("⚠️ No hay datos de ventas cargados. Por favor, carga tus datos usando el botón 'Subir Archivos'.")
+        
+        # Botón para ir a subir archivos
+        if st.button("📤 Ir a Subir Archivos", type="primary"):
+            st.session_state.show_upload_modal = True
+            st.rerun()
         return
     
     if 'inventario_df' not in st.session_state:
@@ -407,29 +410,33 @@ def dashboard_enhanced_app():
     
     # Calcular KPIs con spinner mejorado
     with st.spinner("🔄 Analizando datos y calculando KPIs inteligentes..."):
-        kpis_ventas = calcular_indicadores_ventas(df_ventas_filtrado)
-        kpis_inventario = calcular_indicadores_inventario(inventario_df, df_resultados)
-        kpis_eficiencia = calcular_eficiencia_operacional(kpis_ventas, kpis_inventario, df_ventas_filtrado)
-        tendencias = calcular_kpi_tendencias(df_ventas_filtrado, 30)
-        recomendaciones = generar_recomendaciones(kpis_ventas, kpis_inventario, kpis_eficiencia)
-        
-        # Formatear KPIs para compatibilidad
-        kpis = {
-            'ventas': {
-                'total_ventas': kpis_ventas.get('total_ventas', 0),
-                'tendencia_ventas': tendencias.get('tendencia_porcentual', 0),
-                'producto_mas_vendido': kpis_ventas.get('producto_top', 'N/A'),
-                'concentracion_ventas': kpis_ventas.get('concentracion_ventas', 0),
-                'volatilidad': kpis_ventas.get('coeficiente_variacion', 0)
-            },
-            'inventario': kpis_inventario,
-            'rotacion': kpis_eficiencia,
-            'eficiencia': kpis_eficiencia,
-            'optimizacion': {
-                'productos_optimizados': len(df_resultados[df_resultados['error'].isnull()]) if df_resultados is not None and not df_resultados.empty else 0,
-                'clasificacion_abc': kpis_inventario.get('analisis_abc', {})
+        try:
+            kpis_ventas = calcular_indicadores_ventas(df_ventas_filtrado)
+            kpis_inventario = calcular_indicadores_inventario(inventario_df, df_resultados)
+            kpis_eficiencia = calcular_eficiencia_operacional(kpis_ventas, kpis_inventario, df_ventas_filtrado)
+            tendencias = calcular_kpi_tendencias(df_ventas_filtrado, 30)
+            recomendaciones = generar_recomendaciones(kpis_ventas, kpis_inventario, kpis_eficiencia)
+            
+            # Formatear KPIs para compatibilidad
+            kpis = {
+                'ventas': {
+                    'total_ventas': kpis_ventas.get('total_ventas', 0),
+                    'tendencia_ventas': tendencias.get('tendencia_porcentual', 0),
+                    'producto_mas_vendido': kpis_ventas.get('producto_top', 'N/A'),
+                    'concentracion_ventas': kpis_ventas.get('concentracion_ventas', 0),
+                    'volatilidad': kpis_ventas.get('coeficiente_variacion', 0)
+                },
+                'inventario': kpis_inventario,
+                'rotacion': kpis_eficiencia,
+                'eficiencia': kpis_eficiencia,
+                'optimizacion': {
+                    'productos_optimizados': len(df_resultados[df_resultados['error'].isnull()]) if df_resultados is not None and not df_resultados.empty else 0,
+                    'clasificacion_abc': kpis_inventario.get('analisis_abc', {})
+                }
             }
-        }
+        except Exception as e:
+            st.error(f"Error al calcular KPIs: {str(e)}")
+            return
     
     # Mostrar KPIs principales
     st.markdown("## 🎯 KPIs Principales")
@@ -525,11 +532,12 @@ def dashboard_enhanced_app():
         
         st.info(f"📊 Resumen: {criticos} críticos | {advertencias} advertencias | {optimos} óptimos")
     
-    # Recomendaciones inteligentes
+    # Recomendaciones inteligentes - CORREGIDO
     st.markdown("---")
     st.markdown("## 🤖 Recomendaciones Inteligentes")
     
-    if recomendaciones:
+    # Verificar que recomendaciones sea una lista
+    if recomendaciones and isinstance(recomendaciones, list):
         # Agrupar recomendaciones por tipo
         urgentes = [r for r in recomendaciones if '🔴' in r or '🚨' in r]
         importantes = [r for r in recomendaciones if '⚠️' in r or '📉' in r]
@@ -564,12 +572,12 @@ def dashboard_enhanced_app():
     
     with col_b:
         if st.button("📊 Análisis Completo", use_container_width=True):
-            st.session_state.current_page = "Optimización de Inventario"
+            st.session_state.pagina_actual = "Optimización de Inventario"
             st.rerun()
     
     with col_c:
         if st.button("📦 Gestionar Inventario", use_container_width=True):
-            st.session_state.current_page = "Control de Inventario Básico"
+            st.session_state.pagina_actual = "Control de Inventario Básico"
             st.rerun()
     
     with col_d:
