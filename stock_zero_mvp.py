@@ -143,7 +143,7 @@ elif pagina == "Recetas y Productos":
         recetas_app()
     else:
         st.error("⚠️ El módulo de recetas no está disponible.")
-```elif pagina == "🚀 Optimización de Inventario":
+elif pagina == "🚀 Optimización de Inventario":
     st.header("🚀 Optimización de Inventario (Pronóstico)")
     st.markdown("Analiza tus datos históricos de ventas para calcular puntos de reorden óptimos.")
     st.markdown("---")
