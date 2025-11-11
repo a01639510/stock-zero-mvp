@@ -1,88 +1,239 @@
-# stock_zero_mvp.py
+# stock_zero_mvp_centered.py
 import streamlit as st
 import pandas as pd
-from supabase import create_client
+from datetime import datetime, timedelta
+import warnings
 import os
-from dotenv import load_dotenv
 
-# Cargar variables de entorno
-load_dotenv()
+# --- SUPABASE ---
+try:
+    from supabase import create_client, Client
+    SUPABASE_AVAILABLE = True
+except ImportError:
+    SUPABASE_AVAILABLE = False
 
-# Configuración de Supabase
-SUPABASE_URL = st.secrets.get("supabase", {}).get("url") or os.getenv("SUPABASE_URL")
-SUPABASE_KEY = st.secrets.get("supabase", {}).get("key") or os.getenv("SUPABASE_KEY")
+# --- MÓDULOS ---
+from modules.core_analysis import procesar_multiple_productos
+from modules.trazability import calcular_trazabilidad_inventario
+from modules.components import (
+    inventario_basico_app,
+    crear_grafico_comparativo,
+    crear_grafico_trazabilidad_total,
+    generar_inventario_base
+)
 
-if not SUPABASE_URL or not SUPABASE_KEY:
-    st.error("Faltan SUPABASE_URL o SUPABASE_KEY. Crea .env o configura secrets.")
-    st.stop()
+try:
+    from modules.recipes import recetas_app
+    RECIPES_AVAILABLE = True
+except ImportError:
+    RECIPES_AVAILABLE = False
+    def recetas_app():
+        st.error("El módulo de recetas no está disponible.")
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+warnings.filterwarnings('ignore')
 
-# Inicializar sesión
-if "user" not in st.session_state:
-    st.session_state.user = None
-if "show_login" not in st.session_state:
-    st.session_state.show_login = True
+# ============================================
+# CONFIGURACIÓN
+# ============================================
+st.set_page_config(
+    page_title="Stock Zero",
+    page_icon=" ",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
-# Login / Signup
-@st.experimental_dialog("Acceso", width="small")
-def auth_dialog():
-    tab1, tab2 = st.tabs(["Login", "Registro"])
+lead_time = 7
+stock_seguridad = 3
+frecuencia = 7
 
-    with tab1:
-        email = st.text_input("Email", key="login_email")
-        pwd = st.text_input("Contraseña", type="password", key="login_pwd")
-        if st.button("Entrar"):
-            try:
-                res = supabase.auth.sign_in_with_password({"email": email, "password": pwd})
-                st.session_state.user = res.user
-                st.session_state.show_login = False
-                st.rerun()
-            except:
-                st.error("Error de credenciales")
+# ============================================
+# TÍTULO Y BOTÓN DE SUBIR (SIEMPRE VISIBLE)
+# ============================================
+st.markdown(
+    """
+    <div style='text-align: center; padding: 2rem 0;'>
+        <h1 style='font-size: 5rem; color: #4361EE; margin-bottom: 0.5rem;'>
+              StockZero
+        </h1>
+        <p style='font-size: 1.2rem; color: #666; margin-top: 0;'>
+            Sistema de Gestión de Inventario
+        </p>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
-    with tab2:
-        name = st.text_input("Empresa", key="reg_name")
-        email = st.text_input("Email", key="reg_email")
-        pwd = st.text_input("Contraseña (6+)", type="password", key="reg_pwd")
-        if st.button("Crear"):
-            if len(pwd) < 6:
-                st.error("Mínimo 6 caracteres")
-            else:
-                try:
-                    res = supabase.auth.sign_up({"email": email, "password": pwd})
-                    supabase.table("clients").insert({
-                        "id": res.user.id,
-                        "name": name,
-                        "plan": "free"
-                    }).execute()
-                    st.success("Cuenta creada. Verifica email.")
-                except Exception as e:
-                    st.error("Error al crear cuenta")
+# Botón en esquina superior derecha
+col_left, col_right = st.columns([8, 2])
+with col_right:
+    # Botón de subir archivos
+    if st.button("Subir Archivos", type="primary", width='stretch'):
+        st.session_state.show_upload_modal = True  # Siempre True al hacer clic
 
-if st.session_state.show_login:
-    auth_dialog()
-    st.stop()
+# ============================================
+# MODAL DE SUBIDA CON st.dialog
+# ============================================
+@st.dialog("Subir Archivos de Datos", width="large")
+def upload_modal():
+    st.markdown("### Guía de Formatos y Ejemplos")
 
-# Sidebar: Logout
-with st.sidebar:
-    st.write(f"**{st.session_state.user.email}**")
-    if st.button("Cerrar Sesión"):
-        supabase.auth.sign_out()
-        st.session_state.user = None
-        st.session_state.show_login = True
+    with st.expander("Formatos Aceptados", expanded=True):
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("#### Ventas (Requerido)")
+            st.markdown("**Formato Largo (Recomendado)**")
+            ejemplo_largo = pd.DataFrame({
+                'fecha': ['2025-01-01', '2025-01-01'],
+                'producto': ['Café en Grano (Kg)', 'Leche Entera (Litros)'],
+                'cantidad_vendida': [7, 14]
+            })
+            st.dataframe(ejemplo_largo, width='stretch', hide_index=True)
+            st.download_button(
+                "Descargar Ejemplo Largo",
+                ejemplo_largo.to_csv(index=False),
+                "ejemplo_ventas_largo.csv",
+                "text/csv"
+            )
+
+            st.markdown("**Formato Ancho**")
+            ejemplo_ancho = pd.DataFrame({
+                'fecha': ['2025-01-01'],
+                'Café en Grano (Kg)': [7],
+                'Leche Entera (Litros)': [14]
+            })
+            st.dataframe(ejemplo_ancho, width='stretch', hide_index=True)
+            st.download_button(
+                "Descargar Ejemplo Ancho",
+                ejemplo_ancho.to_csv(index=False),
+                "ejemplo_ventas_ancho.csv",
+                "text/csv"
+            )
+
+        with col2:
+            st.markdown("#### Entradas de Stock (Opcional)")
+            ejemplo_stock = pd.DataFrame({
+                'fecha': ['2024-12-31'],
+                'producto': ['Café en Grano (Kg)'],
+                'cantidad_recibida': [120]
+            })
+            st.dataframe(ejemplo_stock, width='stretch', hide_index=True)
+            st.download_button(
+                "Descargar Ejemplo Stock",
+                ejemplo_stock.to_csv(index=False),
+                "ejemplo_stock.csv",
+                "text/csv"
+            )
+
+    st.markdown("---")
+    st.markdown("### Subir Archivos")
+
+    uploaded_ventas = st.file_uploader("Ventas (CSV)", type="csv", key="modal_ventas")
+    uploaded_stock = st.file_uploader("Stock (Opcional, CSV)", type="csv", key="modal_stock")
+
+    if st.button("Cerrar", type="secondary"):
+        st.session_state.show_upload_modal = False
         st.rerun()
 
-# App
-st.title("StockZero - MVP Local")
-st.write("¡Login exitoso! Sube tus datos.")
+    # Procesar Ventas
+    if uploaded_ventas:
+        try:
+            df_raw = pd.read_csv(uploaded_ventas)
+            if 'producto' not in df_raw.columns and len(df_raw.columns) > 2:
+                df_ventas = df_raw.melt(id_vars='fecha', var_name='producto', value_name='cantidad_vendida')
+            else:
+                df_ventas = df_raw[['fecha', 'producto', 'cantidad_vendida']].copy()
 
-# Subir ventas
-uploaded = st.file_uploader("Sube ventas (CSV)", type="csv")
-if uploaded:
-    df = pd.read_csv(uploaded)
-    df['user_id'] = st.session_state.user.id
-    data = df.to_dict('records')
-    supabase.table("ventas").insert(data).execute()
-    st.success("Datos guardados en Supabase")
-    st.dataframe(df)
+            df_ventas['fecha'] = pd.to_datetime(df_ventas['fecha'], errors='coerce')
+            df_ventas = df_ventas.dropna(subset=['fecha'])
+            df_ventas['cantidad_vendida'] = pd.to_numeric(df_ventas['cantidad_vendida'], errors='coerce').fillna(0)
+
+            st.session_state.df_ventas_trazabilidad = df_ventas
+            st.success("Ventas cargadas correctamente.")
+
+            # Supabase
+            if SUPABASE_AVAILABLE and os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_KEY"):
+                supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+                supabase.table("ventas").insert(df_ventas.to_dict('records')).execute()
+                st.info("Guardado en Supabase.")
+
+        except Exception as e:
+            st.error(f"Error: {e}")
+
+    # Procesar Stock
+    if uploaded_stock:
+        try:
+            df_stock = pd.read_csv(uploaded_stock)
+            df_stock['fecha'] = pd.to_datetime(df_stock['fecha'], errors='coerce')
+            df_stock = df_stock.dropna(subset=['fecha'])
+            df_stock['cantidad_recibida'] = pd.to_numeric(df_stock['cantidad_recibida'], errors='coerce').fillna(0)
+            st.session_state.df_stock_trazabilidad = df_stock
+            st.success("Stock cargado.")
+
+            if SUPABASE_AVAILABLE and os.getenv("SUPABASE_URL"):
+                supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+                supabase.table("stock").insert(df_stock.to_dict('records')).execute()
+
+        except Exception as e:
+            st.error(f"Error: {e}")
+
+    if uploaded_ventas or uploaded_stock:
+        if st.button("Listo - Cerrar", type="primary"):
+            st.session_state.show_upload_modal = False
+            st.rerun()
+
+# Mostrar modal si está activo
+if st.session_state.get("show_upload_modal", False):
+    upload_modal()
+
+# ============================================
+# NAVEGACIÓN
+# ============================================
+st.markdown("---")
+st.markdown("## Secciones")
+
+cols = st.columns(5)
+with cols[1]:
+    if st.button("Dashboard", width='stretch', type="primary"):
+        st.session_state.pagina_actual = "Dashboard Inteligente"
+with cols[2]:
+    if st.button("Optimización", width='stretch'):
+        st.session_state.pagina_actual = "Optimización de Inventario"
+with cols[3]:
+    if st.button("Control Inventario", width='stretch'):
+        st.session_state.pagina_actual = "Control de Inventario Básico"
+
+# ============================================
+# INICIALIZAR SESSION STATE
+# ============================================
+if 'df_ventas_trazabilidad' not in st.session_state:
+    st.session_state.df_ventas_trazabilidad = pd.DataFrame(columns=['fecha', 'producto', 'cantidad_vendida'])
+if 'df_stock_trazabilidad' not in st.session_state:
+    st.session_state.df_stock_trazabilidad = pd.DataFrame(columns=['fecha', 'producto', 'cantidad_recibida'])
+if 'inventario_df' not in st.session_state:
+    st.session_state.inventario_df = generar_inventario_base(use_example_data=True)
+
+# ============================================
+# PÁGINAS
+# ============================================
+st.markdown("---")
+pagina = st.session_state.get("pagina_actual", "Dashboard Inteligente")
+
+if pagina == "Dashboard Inteligente":
+    try:
+        from pages._0_Dashboard_Enhanced import dashboard_enhanced_app
+        dashboard_enhanced_app()
+    except Exception as e:
+        st.error(f"Error: {e}")
+
+elif pagina == "Optimización de Inventario":
+    st.header("Optimización de Inventario")
+    if not st.session_state.df_ventas_trazabilidad.empty:
+        st.success("Datos listos. ¡Calcula!")
+        # Aquí va tu código de optimización...
+        # Usa: st.session_state.df_ventas_trazabilidad
+    else:
+        st.info("Sube archivos desde el botón superior.")
+
+elif pagina == "Control de Inventario Básico":
+    inventario_basico_app()
