@@ -6,7 +6,7 @@ import warnings
 import os
 from supabase import create_client
 from dotenv import load_dotenv
-
+from pages._0_Dashboard_Enhanced import dashboard_enhanced_app
 # Cargar .env
 
 
@@ -256,6 +256,7 @@ pagina = st.session_state.get("pagina_actual", "Dashboard Inteligente")
 if pagina == "Dashboard Inteligente":
     try:
         
+        dashboard_enhanced_app()
     except Exception as e:
         st.error(f"Error: {e}")
 
