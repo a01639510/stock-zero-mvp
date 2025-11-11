@@ -1,5 +1,5 @@
 # modules/core_analysis.py
-
+import statsmodels
 import pandas as pd
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from typing import Dict, Union, List
