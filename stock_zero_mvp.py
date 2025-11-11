@@ -3,6 +3,15 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 import warnings
+import os  # Para variables de entorno
+
+# --- IMPORTACIONES PARA SUPABASE (quita si no lo usas) ---
+try:
+    from supabase import create_client, Client
+    SUPABASE_AVAILABLE = True
+except ImportError:
+    SUPABASE_AVAILABLE = False
+    st.warning("⚠️ Supabase no está instalado. Instala con 'pip install supabase' para habilitar guardado en DB.")
 
 # --- IMPORTACIONES DE MÓDULOS ---
 from modules.core_analysis import procesar_multiple_productos
@@ -59,6 +68,140 @@ lead_time = 7
 stock_seguridad = 3
 frecuencia = 7
 
+# --- BOTÓN DE SUBIR ARCHIVOS EN ESQUINA SUPERIOR (SIEMPRE ACTIVO) ---
+col_title, col_upload = st.columns([8, 2])  # Para alinear a la derecha
+with col_upload:
+    if st.button("📤 Subir Archivos", key="upload_button_top", type="primary"):
+        st.session_state.show_upload = not st.session_state.get('show_upload', False)
+
+# --- SECCIÓN TIPO POPUP PARA SUBIR ARCHIVOS ---
+if st.session_state.get('show_upload', False):
+    # Simular popup con CSS (fondo sombreado y centrado)
+    st.markdown("""
+        <style>
+            .popup-container {
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background-color: white;
+                padding: 2rem;
+                border-radius: 10px;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                z-index: 1000;
+                max-width: 80%;
+                overflow-y: auto;
+            }
+            .overlay {
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background-color: rgba(0, 0, 0, 0.5);
+                z-index: 999;
+            }
+        </style>
+        <div class="overlay" onclick="st.session_state.show_upload = False"></div>
+    """, unsafe_allow_html=True)
+    
+    with st.container():  # Contenedor para el "popup"
+        st.markdown('<div class="popup-container">', unsafe_allow_html=True)
+        st.header("📂 Subir Archivos de Datos")
+        
+        with st.expander("📘 Guía de Formatos y Ejemplos", expanded=True):
+            st.markdown("### 📊 Formatos Aceptados")
+            
+            col_guia1, col_guia2 = st.columns(2)
+            
+            with col_guia1:
+                st.markdown("#### 📈 Archivo de Ventas (Requerido)")
+                
+                # Formato Largo
+                st.markdown("**Formato 1: Largo (Recomendado)**")
+                # Asume que tienes una función generar_ejemplo_ventas() en tu código original
+                ejemplo_ventas_largo = pd.DataFrame({  # Ejemplo simple, reemplaza con tu función
+                    'fecha': ['2025-01-01', '2025-01-01'],
+                    'producto': ['Café en Grano (Kg)', 'Leche Entera (Litros)'],
+                    'cantidad_vendida': [7, 14]
+                }).head(5)
+                st.dataframe(ejemplo_ventas_largo, use_container_width=True, hide_index=True)
+                csv_ventas = ejemplo_ventas_largo.to_csv(index=False)
+                st.download_button(label="⬇️ Descargar Ejemplo (Largo)", data=csv_ventas, file_name="ejemplo_ventas_largo.csv", mime="text/csv")
+                
+                # Formato Ancho (similar)
+                st.markdown("**Formato 2: Ancho**")
+                # Asume generar_ejemplo_ventas_ancho()
+                ejemplo_ventas_ancho = pd.DataFrame({  # Ejemplo
+                    'fecha': ['2025-01-01'],
+                    'Café en Grano (Kg)': [7],
+                    'Leche Entera (Litros)': [14]
+                }).head(5)
+                st.dataframe(ejemplo_ventas_ancho, use_container_width=True, hide_index=True)
+                csv_ancho = ejemplo_ventas_ancho.to_csv(index=False)
+                st.download_button(label="⬇️ Descargar Ejemplo (Ancho)", data=csv_ancho, file_name="ejemplo_ventas_ancho.csv", mime="text/csv")
+            
+            with col_guia2:
+                st.markdown("#### 📦 Archivo de Entradas de Stock (Opcional)")
+                # Similar, agrega tu ejemplo aquí
+                ejemplo_stock = pd.DataFrame({
+                    'fecha': ['2024-12-31'],
+                    'producto': ['Café en Grano (Kg)'],
+                    'cantidad_recibida': [120]
+                }).head(5)
+                st.dataframe(ejemplo_stock, use_container_width=True, hide_index=True)
+                csv_stock = ejemplo_stock.to_csv(index=False)
+                st.download_button(label="⬇️ Descargar Ejemplo Stock", data=csv_stock, file_name="ejemplo_stock.csv", mime="text/csv")
+        
+        # Uploaders
+        uploaded_ventas = st.file_uploader("📈 Sube Archivo de Ventas (CSV)", type=["csv"])
+        uploaded_stock = st.file_uploader("📦 Sube Archivo de Stock (Opcional, CSV)", type=["csv"])
+        
+        if uploaded_ventas:
+            try:
+                df_ventas = pd.read_csv(uploaded_ventas)
+                # Validación básica
+                required_cols = ['fecha', 'producto']  # Ajusta según formato
+                if not all(col in df_ventas.columns for col in required_cols):
+                    st.error("❌ Formato inválido. Revisa la guía.")
+                else:
+                    # Procesamiento (largo/ancho, como en tu código original)
+                    # Asume que tienes lógica para convertir ancho a largo si es necesario
+                    df_ventas['fecha'] = pd.to_datetime(df_ventas['fecha'], errors='coerce')
+                    st.session_state['df_ventas_trazabilidad'] = df_ventas
+                    st.success("✅ Ventas subidas correctamente.")
+                    
+                    # Guardar en Supabase si disponible
+                    if SUPABASE_AVAILABLE:
+                        supabase: Client = create_client(os.environ['SUPABASE_URL'], os.environ['SUPABASE_KEY'])
+                        # Ejemplo: Insertar en tabla 'ventas'
+                        data = df_ventas.to_dict('records')
+                        supabase.table('ventas').insert(data).execute()
+                        st.info("💾 Datos guardados en Supabase (tabla 'ventas').")
+            
+            except Exception as e:
+                st.error(f"❌ Error: {str(e)}")
+        
+        if uploaded_stock:
+            # Similar procesamiento para stock
+            df_stock = pd.read_csv(uploaded_stock)
+            df_stock['fecha'] = pd.to_datetime(df_stock['fecha'], errors='coerce')
+            st.session_state['df_stock_trazabilidad'] = df_stock
+            st.success("✅ Stock subido correctamente.")
+            
+            if SUPABASE_AVAILABLE:
+                supabase: Client = create_client(os.environ['SUPABASE_URL'], os.environ['SUPABASE_KEY'])
+                data = df_stock.to_dict('records')
+                supabase.table('stock').insert(data).execute()
+                st.info("💾 Datos guardados en Supabase (tabla 'stock').")
+        
+        if st.button("❌ Cerrar", key="close_upload"):
+            st.session_state.show_upload = False
+            st.rerun()
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+
+# --- RESTO DEL CÓDIGO ORIGINAL (Navegación, páginas, etc.) ---
 # Navegación centrada como subtítulos
 st.markdown("---")
 st.markdown("## 🧭 Secciones Disponibles")
@@ -112,6 +255,39 @@ if 'df_stock_trazabilidad' not in st.session_state:
 if 'inventario_df' not in st.session_state:
     st.session_state['inventario_df'] = generar_inventario_base(None, use_example_data=True)
 
+# ============================================
+# CONTENIDO PRINCIPAL SEGÚN PÁGINA SELECCIONADA
+# ============================================
+
+st.markdown("---")
+
+if pagina == "Dashboard Inteligente":
+    # Importar y ejecutar el dashboard mejorado
+    try:
+        from pages._0_Dashboard_Enhanced import dashboard_enhanced_app
+        dashboard_enhanced_app()
+    except ImportError:
+        st.error("❌ El módulo del dashboard mejorado no está disponible. Asegúrate de que el archivo 'pages/_0_Dashboard_Enhanced.py' exista.")
+    except Exception as e:
+        st.error(f"❌ Error al cargar el dashboard mejorado: {str(e)}")
+
+elif pagina == "Optimización de Inventario":
+    st.header("🚀 Optimización de Inventario (Pronóstico)")
+    st.markdown("Analiza tus datos históricos de ventas para calcular puntos de reorden óptimos.")
+    st.markdown("---")
+    
+    # Usa datos de session_state si ya subidos
+    if not st.session_state['df_ventas_trazabilidad'].empty:
+        st.success("✅ Datos de ventas ya subidos. Puedes calcular directamente.")
+        df_ventas = st.session_state['df_ventas_trazabilidad']
+        df_stock = st.session_state.get('df_stock_trazabilidad', pd.DataFrame())
+    else:
+        st.info("📂 Sube archivos desde el botón superior para comenzar.")
+        # Resto de tu código de optimización...
+
+    # ... [resto del código de optimización, usando df_ventas y df_stock]
+
+# ... [Resto del código original para otras páginas]
 # ============================================
 # CONTENIDO PRINCIPAL SEGÚN PÁGINA SELECCIONADA
 # ============================================
