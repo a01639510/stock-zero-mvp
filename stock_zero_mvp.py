@@ -255,8 +255,7 @@ pagina = st.session_state.get("pagina_actual", "Dashboard Inteligente")
 
 if pagina == "Dashboard Inteligente":
     try:
-        from pages._0_Dashboard_Enhanced import dashboard_enhanced_app
-        dashboard_enhanced_app()
+        
     except Exception as e:
         st.error(f"Error: {e}")
 
