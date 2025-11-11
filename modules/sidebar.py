@@ -1,4 +1,4 @@
 # modules/
-import streamlit as st
+#import streamlit as st
 
-def mostrar_sidebar():
+#def mostrar_sidebar():
