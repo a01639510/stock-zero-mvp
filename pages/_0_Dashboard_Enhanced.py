@@ -259,7 +259,7 @@ def crear_tablero_control_eficiencia(kpis):
         ))
         
         fig_fill_rate.update_layout(height=300, template="plotly_white")
-        st.plotly_chart(fig_fill_rate, use_container_width=True)
+        st.plotly_chart(fig_fill_rate, width="stretch")
     
     with col2:
         # Gauge de Eficiencia de Predicción
@@ -286,7 +286,7 @@ def crear_tablero_control_eficiencia(kpis):
         ))
         
         fig_eficiencia.update_layout(height=300, template="plotly_white")
-        st.plotly_chart(fig_eficiencia, use_container_width=True)
+        st.plotly_chart(fig_eficiencia, width="stretch")
 
 def crear_tabla_estados_producto_enhanced(inventario_df, df_resultados):
     """
@@ -457,12 +457,12 @@ def dashboard_enhanced_app():
     with col1:
         fig_ventas = crear_grafico_ventas_tendencia_enhanced(df_ventas_filtrado)
         if fig_ventas:
-            st.plotly_chart(fig_ventas, use_container_width=True)
+            st.plotly_chart(fig_ventas, width="stretch")
     
     with col2:
         fig_composicion = crear_grafico_composicion_stock(inventario_df, df_resultados)
         if fig_composicion:
-            st.plotly_chart(fig_composicion, use_container_width=True)
+            st.plotly_chart(fig_composicion, width="stretch")
     
     if nivel_detalle in ["Análisis Completo", "Detallado"]:
         # Análisis adicional
@@ -491,7 +491,7 @@ def dashboard_enhanced_app():
                     height=400
                 )
                 
-                st.plotly_chart(fig_top, use_container_width=True)
+                st.plotly_chart(fig_top, width="stretch")
         
         with col4:
             # Métricas de eficiencia
@@ -523,7 +523,7 @@ def dashboard_enhanced_app():
             return color
         
         styled_df = tabla_estados.style.applymap(highlight_critical_rows, subset=['Estado'])
-        st.dataframe(styled_df, use_container_width=True, hide_index=True)
+        st.dataframe(styled_df, width="stretch", hide_index=True)
         
         # Estadísticas rápidas
         criticos = len(tabla_estados[tabla_estados['Estado'].str.contains('🔴', na=False)])
@@ -567,21 +567,21 @@ def dashboard_enhanced_app():
     col_a, col_b, col_c, col_d = st.columns(4)
     
     with col_a:
-        if st.button("🔄 Actualizar Dashboard", use_container_width=True):
+        if st.button("🔄 Actualizar Dashboard", width="stretch"):
             st.rerun()
     
     with col_b:
-        if st.button("📊 Análisis Completo", use_container_width=True):
+        if st.button("📊 Análisis Completo", width="stretch"):
             st.session_state.pagina_actual = "Optimización de Inventario"
             st.rerun()
     
     with col_c:
-        if st.button("📦 Gestionar Inventario", use_container_width=True):
+        if st.button("📦 Gestionar Inventario", width="stretch"):
             st.session_state.pagina_actual = "Control de Inventario Básico"
             st.rerun()
     
     with col_d:
-        if st.button("📥 Exportar Reporte", use_container_width=True):
+        if st.button("📥 Exportar Reporte", width="stretch"):
             st.success("📊 Reporte exportado exitosamente (funcionalidad en desarrollo)")
 
 # Ejecutar la aplicación
