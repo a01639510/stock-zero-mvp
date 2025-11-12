@@ -97,7 +97,7 @@ def inventario_basico_app():
     st.subheader("1️⃣ Inventario Actual (Edición en Vivo)")
     
     edited_df = st.data_editor(
-        df_inventario, use_container_width=True, key="data_editor_inventario"
+        df_inventario, width='stretch', key="data_editor_inventario"
     )
     
     if not edited_df.empty:
@@ -129,7 +129,7 @@ def inventario_basico_app():
         st.warning("⚠️ **¡URGENTE!** Ítems por debajo de PR.")
         st.dataframe(
             items_faltantes[['Producto', 'Stock Actual', 'Punto de Reorden (PR)']],
-            use_container_width=True, hide_index=True
+            width='stretch', hide_index=True
         )
     else: st.success("🎉 Todo el inventario está en niveles óptimos.")
 
