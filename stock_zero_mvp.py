@@ -136,7 +136,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-    with st.sidebar:
+with st.sidebar:
     st.markdown(f"### 👤 {st.session_state.user.email}")
     st.markdown("---")
     
@@ -291,11 +291,11 @@ def upload_modal():
     st.markdown("---")
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("❌ Cerrar", type="secondary", use_container_width=True):
+        if st.button("❌ Cerrar", type="secondary", width="stretch"):
             st.session_state.show_upload_modal = False
             st.rerun()
     with col2:
-        if (uploaded_ventas or uploaded_stock) and st.button("✅ Listo", type="primary", use_container_width=True):
+        if (uploaded_ventas or uploaded_stock) and st.button("✅ Listo", type="primary", width="stretch"):
             st.session_state.show_upload_modal = False
             st.rerun()
 
@@ -309,15 +309,15 @@ st.markdown("---")
 st.markdown("## 🎯 Secciones")
 cols = st.columns(5)
 with cols[1]:
-    if st.button("📊 Dashboard", type="primary", use_container_width=True): 
+    if st.button("📊 Dashboard", type="primary", width="stretch"): 
         st.session_state.pagina_actual = "Dashboard Inteligente"
         st.rerun()
 with cols[2]:
-    if st.button("🎯 Optimización", use_container_width=True): 
+    if st.button("🎯 Optimización", width="stretch"): 
         st.session_state.pagina_actual = "Optimización de Inventario"
         st.rerun()
 with cols[3]:
-    if st.button("📦 Control Inventario", use_container_width=True): 
+    if st.button("📦 Control Inventario", width="stretch"): 
         st.session_state.pagina_actual = "Control de Inventario Básico"
         st.rerun()
 
