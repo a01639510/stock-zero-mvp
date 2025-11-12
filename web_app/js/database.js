@@ -1,4 +1,4 @@
-// Stock Zero - Database Integration JavaScript (versión completa y adaptada a tus tablas reales)
+// Stock Zero - Database Integration JavaScript (versión completa con registro + verificación de contraseña)
 import { createClient } from "@supabase/supabase-js";
 
 class DatabaseManager {
@@ -7,7 +7,7 @@ class DatabaseManager {
         this.supabaseKey = null;
         this.supabase = null;
         this.isConnected = false;
-        this.user_id = localStorage.getItem('user_id') || null;
+        this.user_id = localStorage.getItem("user_id") || null;
         this.connectionPromise = null;
     }
 
@@ -62,23 +62,89 @@ class DatabaseManager {
         showNotification("Credenciales de base de datos guardadas", "success");
     }
 
-    async authenticate(email, password) {
+    getUserId() {
+        return this.user_id;
+    }
+
+    // -------- AUTH -------- //
+    async authenticate(email, password, name = null) {
         if (!this.isConnected) await this.initialize();
+
         try {
-            const { data, error } = await this.supabase.auth.signInWithPassword({ email, password });
-            if (error) throw error;
-            this.user_id = data.user.id;
-            localStorage.setItem("user_id", this.user_id);
-            console.log("🔐 Usuario autenticado:", this.user_id);
-            return { user: data.user, success: true };
+            // Verificar si el usuario existe en Supabase
+            const { data: existingUser, error: lookupError } = await this.supabase
+                .from("clients")
+                .select("id")
+                .eq("id", this.user_id)
+                .maybeSingle();
+
+            if (lookupError) console.warn("Lookup warning:", lookupError);
+
+            // Intentar iniciar sesión
+            const { data: loginData, error: loginError } = await this.supabase.auth.signInWithPassword({
+                email,
+                password
+            });
+
+            if (loginData?.user) {
+                // 🔹 Usuario autenticado correctamente
+                this.user_id = loginData.user.id;
+                localStorage.setItem("user_id", this.user_id);
+                console.log("🔐 Usuario autenticado:", this.user_id);
+
+                // Verificar que tenga fila en clients
+                await this._ensureClientRecord(loginData.user.id, name || email.split("@")[0]);
+                return { user: loginData.user, success: true };
+            }
+
+            // Si no se pudo iniciar sesión, puede ser usuario nuevo → intentar registro
+            if (loginError?.message?.includes("Invalid login credentials")) {
+                console.warn("⚠️ Usuario no encontrado. Intentando registro...");
+
+                const { data: signUpData, error: signUpError } = await this.supabase.auth.signUp({
+                    email,
+                    password
+                });
+
+                if (signUpError) throw signUpError;
+
+                const newUser = signUpData.user;
+                this.user_id = newUser.id;
+                localStorage.setItem("user_id", this.user_id);
+
+                // Crear registro en tabla clients
+                await this._ensureClientRecord(newUser.id, name || email.split("@")[0]);
+
+                showNotification("Cuenta creada exitosamente", "success");
+                console.log("🆕 Nuevo usuario registrado:", newUser.id);
+                return { user: newUser, success: true };
+            }
+
+            throw loginError;
         } catch (error) {
-            console.error("Authentication failed:", error);
+            console.error("❌ Authentication failed:", error);
+            showNotification(error.message || "Error de autenticación", "error");
             return { success: false, error: error.message };
         }
     }
 
-    getUserId() {
-        return this.user_id;
+    async _ensureClientRecord(user_id, name) {
+        const { data: existing, error } = await this.supabase
+            .from("clients")
+            .select("id")
+            .eq("id", user_id)
+            .maybeSingle();
+
+        if (error) console.error("Client check error:", error);
+
+        if (!existing) {
+            const { error: insertError } = await this.supabase
+                .from("clients")
+                .insert([{ id: user_id, name, plan: "free" }]);
+
+            if (insertError) console.error("Error creando cliente:", insertError);
+            else console.log("✅ Cliente registrado en tabla clients");
+        }
     }
 
     // -------- FETCH DATA -------- //
