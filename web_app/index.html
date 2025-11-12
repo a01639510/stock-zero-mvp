@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🏭 Stock Zero - Sistema Inteligente de Gestión</title>
+    <meta name="description" content="Dashboard completo para análisis de inventario, optimización de pedidos y gestión de datos en tiempo real">
+    <meta name="author" content="Stock Zero Team">
+    
+    <!-- External Libraries -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="css/styles.css">
+    
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏭</text></svg>">
+<script src="https://sites.super.myninja.ai/_assets/ninja-daytona-script.js"></script>
+</head>
+<body class="bg-gradient-to-br from-slate-50 to-blue-50 min-h-screen">
+    <!-- Loading Screen -->
+    <div id="loadingScreen" class="fixed inset-0 bg-white z-50 flex items-center justify-center">
+        <div class="text-center">
+            <div class="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p class="text-gray-600">Cargando Stock Zero...</p>
+        </div>
+    </div>
+
+    <!-- Login Screen -->
+    <div id="loginScreen" class="hidden fixed inset-0 bg-gradient-to-br from-blue-600 to-purple-700 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md transform transition-all">
+            <div class="text-center mb-8">
+                <div class="inline-flex items-center justify-center w-20 h-20 bg-blue-600 rounded-full mb-4 animate-float">
+                    <i class="fas fa-warehouse text-white text-3xl"></i>
+                </div>
+                <h1 class="text-4xl font-bold text-gray-900 mb-2">🏭 Stock Zero</h1>
+                <p class="text-gray-600">Sistema Inteligente de Gestión</p>
+                <p class="text-sm text-gray-500 mt-2">Análisis • Optimización • Control</p>
+            </div>
+            
+            <form onsubmit="handleLogin(event)" class="space-y-6">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-envelope mr-2"></i>Email
+                    </label>
+                    <input type="email" id="email" required
+                        class="block w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                        placeholder="tu@email.com">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-lock mr-2"></i>Contraseña
+                    </label>
+                    <input type="password" id="password" required
+                        class="block w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                        placeholder="••••••••">
+                </div>
+                
+                <button type="submit" 
+                    class="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-blue-700 transition duration-200 transform hover:scale-105">
+                    <i class="fas fa-sign-in-alt mr-2"></i>Iniciar Sesión
+                </button>
+            </form>
+            
+            <div class="mt-6 text-center">
+                <button onclick="loadDemoData()" 
+                    class="text-blue-600 hover:text-blue-800 text-sm font-medium">
+                    <i class="fas fa-play mr-1"></i>Probar Demo
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Application -->
+    <div id="mainApp" class="hidden min-h-screen">
+        <!-- Header Navigation -->
+        <header class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-40">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between items-center h-16">
+                    <div class="flex items-center space-x-4">
+                        <i class="fas fa-warehouse text-blue-600 text-2xl"></i>
+                        <h1 class="text-xl font-bold text-gray-900">🏭 Stock Zero</h1>
+                        <span class="hidden md:inline px-3 py-1 bg-green-100 text-green-800 text-xs font-medium rounded-full">
+                            <i class="fas fa-circle text-green-500 text-xs mr-1"></i>En Línea
+                        </span>
+                    </div>
+                    
+                    <!-- Navigation Tabs -->
+                    <nav class="hidden md:flex space-x-8">
+                        <button onclick="switchTab('dashboard')" id="dashboardTab" 
+                            class="tab-button text-blue-600 border-b-2 border-blue-600 px-3 py-2 text-sm font-medium">
+                            <i class="fas fa-tachometer-alt mr-2"></i>Dashboard
+                        </button>
+                        <button onclick="switchTab('analysis')" id="analysisTab" 
+                            class="tab-button text-gray-500 hover:text-gray-700 px-3 py-2 text-sm font-medium">
+                            <i class="fas fa-chart-line mr-2"></i>Análisis
+                        </button>
+                        <button onclick="switchTab('optimization')" id="optimizationTab" 
+                            class="tab-button text-gray-500 hover:text-gray-700 px-3 py-2 text-sm font-medium">
+                            <i class="fas fa-cogs mr-2"></i>Optimización
+                        </button>
+                        <button onclick="switchTab('data')" id="dataTab" 
+                            class="tab-button text-gray-500 hover:text-gray-700 px-3 py-2 text-sm font-medium">
+                            <i class="fas fa-database mr-2"></i>Datos
+                        </button>
+                        <button onclick="switchTab('recipes')" id="recipesTab" 
+                            class="tab-button text-gray-500 hover:text-gray-700 px-3 py-2 text-sm font-medium">
+                            <i class="fas fa-utensils mr-2"></i>Recetas
+                        </button>
+                    </nav>
+                    
+                    <!-- User Menu -->
+                    <div class="flex items-center space-x-4">
+                        <span id="userEmail" class="hidden sm:block text-sm text-gray-600"></span>
+                        <button onclick="syncData()" class="text-blue-600 hover:text-blue-800 transition-colors" title="Sincronizar">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                        <button onclick="showSettings()" class="text-gray-600 hover:text-gray-800 transition-colors" title="Configuración">
+                            <i class="fas fa-cog"></i>
+                        </button>
+                        <button onclick="handleLogout()" class="text-red-600 hover:text-red-800 transition-colors" title="Cerrar sesión">
+                            <i class="fas fa-sign-out-alt"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Mobile Navigation -->
+        <div class="md:hidden bg-white border-b border-gray-200 px-4 py-2">
+            <div class="flex space-x-4 overflow-x-auto">
+                <button onclick="switchTab('dashboard')" class="text-blue-600 px-3 py-2 text-sm font-medium whitespace-nowrap">
+                    <i class="fas fa-tachometer-alt"></i> Dashboard
+                </button>
+                <button onclick="switchTab('analysis')" class="text-gray-500 px-3 py-2 text-sm font-medium whitespace-nowrap">
+                    <i class="fas fa-chart-line"></i> Análisis
+                </button>
+                <button onclick="switchTab('optimization')" class="text-gray-500 px-3 py-2 text-sm font-medium whitespace-nowrap">
+                    <i class="fas fa-cogs"></i> Optimización
+                </button>
+                <button onclick="switchTab('data')" class="text-gray-500 px-3 py-2 text-sm font-medium whitespace-nowrap">
+                    <i class="fas fa-database"></i> Datos
+                </button>
+                <button onclick="switchTab('recipes')" class="text-gray-500 px-3 py-2 text-sm font-medium whitespace-nowrap">
+                    <i class="fas fa-utensils"></i> Recetas
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Content Area -->
+        <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <!-- Dashboard Tab -->
+            <div id="dashboardContent" class="tab-content">
+                <div class="mb-8">
+                    <h2 class="text-2xl font-bold text-gray-900 mb-2">Dashboard Inteligente</h2>
+                    <p class="text-gray-600">Vista general de tu inventario y métricas clave en tiempo real</p>
+                </div>
+
+                <!-- KPI Cards -->
+                <div id="kpiCards" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                    <!-- KPIs will be dynamically loaded here -->
+                </div>
+
+                <!-- Charts Grid -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-4">
+                            <i class="fas fa-chart-line text-blue-600 mr-2"></i>Tendencia de Ventas
+                        </h3>
+                        <div id="salesTrendChart" style="height: 300px;"></div>
+                    </div>
+                    
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-4">
+                            <i class="fas fa-boxes text-green-600 mr-2"></i>Estado del Inventario
+                        </h3>
+                        <div id="inventoryStatusChart" style="height: 300px;"></div>
+                    </div>
+                </div>
+
+                <!-- Critical Products Alert -->
+                <div id="criticalProductsAlert" class="hidden bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+                    <div class="flex items-center">
+                        <i class="fas fa-exclamation-triangle text-red-600 mr-3"></i>
+                        <div>
+                            <h4 class="text-red-800 font-medium">¡Productos Críticos Detectados!</h4>
+                            <p class="text-red-600 text-sm">Hay productos que necesitan reabastecimiento urgente.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Activity -->
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">
+                        <i class="fas fa-clock text-blue-600 mr-2"></i>Actividad Reciente
+                    </h3>
+                    <div id="recentActivity" class="space-y-3">
+                        <!-- Activity items will be loaded here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Analysis Tab -->
+            <div id="analysisContent" class="tab-content hidden">
+                <div class="mb-8">
+                    <h2 class="text-2xl font-bold text-gray-900 mb-2">Análisis Avanzado</h2>
+                    <p class="text-gray-600">Análisis detallado de tendencias, patrones y proyecciones</p>
+                </div>
+
+                <!-- Analysis Controls -->
+                <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">
+                        <i class="fas fa-sliders-h text-blue-600 mr-2"></i>Parámetros de Análisis
+                    </h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Período de Tiempo</label>
+                            <select id="analysisPeriod" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                <option value="7">Últimos 7 días</option>
+                                <option value="30" selected>Últimos 30 días</option>
+                                <option value="90">Últimos 90 días</option>
+                                <option value="365">Último año</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Tipo de Análisis</label>
+                            <select id="analysisType" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                <option value="sales">Análisis de Ventas</option>
+                                <option value="inventory">Análisis de Inventario</option>
+                                <option value="efficiency">Eficiencia Operativa</option>
+                                <option value="prediction">Predicciones</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Productos</label>
+                            <select id="analysisProducts" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                <option value="all">Todos los productos</option>
+                                <option value="critical">Solo críticos</option>
+                                <option value="top">Top 10 más vendidos</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button onclick="runAnalysis()" class="mt-4 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                        <i class="fas fa-play mr-2"></i>Ejecutar Análisis
+                    </button>
+                </div>
+
+                <!-- Analysis Results -->
+                <div id="analysisResults" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- Results will be loaded here -->
+                </div>
+            </div>
+
+            <!-- Optimization Tab -->
+            <div id="optimizationContent" class="tab-content hidden">
+                <div class="mb-8">
+                    <h2 class="text-2xl font-bold text-gray-900 mb-2">Optimización Inteligente</h2>
+                    <p class="text-gray-600">Recomendaciones para optimizar pedidos y niveles de inventario</p>
+                </div>
+
+                <!-- Optimization Controls -->
+                <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">
+                        <i class="fas fa-cogs text-green-600 mr-2"></i>Configuración de Optimización
+                    </h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <h4 class="text-md font-medium text-gray-800 mb-3">Parámetros de Inventario</h4>
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Nivel de Servicio Objetivo (%)</label>
+                                    <input type="number" id="serviceLevel" value="95" min="80" max="99" 
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Lead Time Promedio (días)</label>
+                                    <input type="number" id="leadTime" value="7" min="1" max="30" 
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Costo de Mantenimiento (%)</label>
+                                    <input type="number" id="holdingCost" value="25" min="5" max="50" step="0.1"
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500">
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <h4 class="text-md font-medium text-gray-800 mb-3">Objetivos de Optimización</h4>
+                            <div class="space-y-2">
+                                <label class="flex items-center">
+                                    <input type="checkbox" id="optimizeStock" checked class="mr-2 text-green-600">
+                                    <span class="text-sm">Optimizar niveles de stock</span>
+                                </label>
+                                <label class="flex items-center">
+                                    <input type="checkbox" id="optimizeOrders" checked class="mr-2 text-green-600">
+                                    <span class="text-sm">Optimizar pedidos</span>
+                                </label>
+                                <label class="flex items-center">
+                                    <input type="checkbox" id="reduceCosts" checked class="mr-2 text-green-600">
+                                    <span class="text-sm">Reducir costos operativos</span>
+                                </label>
+                                <label class="flex items-center">
+                                    <input type="checkbox" id="improveService" checked class="mr-2 text-green-600">
+                                    <span class="text-sm">Mejorar nivel de servicio</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <button onclick="runOptimization()" class="mt-6 bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors">
+                        <i class="fas fa-magic mr-2"></i>Ejecutar Optimización
+                    </button>
+                </div>
+
+                <!-- Optimization Results -->
+                <div id="optimizationResults" class="space-y-6">
+                    <!-- Results will be loaded here -->
+                </div>
+            </div>
+
+            <!-- Data Management Tab -->
+            <div id="dataContent" class="tab-content hidden">
+                <div class="mb-8">
+                    <h2 class="text-2xl font-bold text-gray-900 mb-2">Gestión de Datos</h2>
+                    <p class="text-gray-600">Importa, exporta y administra tus datos de inventario y ventas</p>
+                </div>
+
+                <!-- Data Import Section -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-4">
+                            <i class="fas fa-upload text-blue-600 mr-2"></i>Importar Datos
+                        </h3>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Archivo de Ventas (CSV)</label>
+                                <input type="file" id="salesFile" accept=".csv" 
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                <p class="text-xs text-gray-500 mt-1">Formato: fecha,producto,ventas,categoria</p>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Archivo de Inventario (CSV)</label>
+                                <input type="file" id="inventoryFile" accept=".csv" 
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                <p class="text-xs text-gray-500 mt-1">Formato: producto,stock_actual,stock_minimo,stock_optimo</p>
+                            </div>
+                            <button onclick="importData()" class="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                                <i class="fas fa-file-import mr-2"></i>Importar Datos
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-4">
+                            <i class="fas fa-download text-green-600 mr-2"></i>Exportar Datos
+                        </h3>
+                        <div class="space-y-4">
+                            <button onclick="exportData('sales')" class="w-full bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors">
+                                <i class="fas fa-file-csv mr-2"></i>Exportar Ventas (CSV)
+                            </button>
+                            <button onclick="exportData('inventory')" class="w-full bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors">
+                                <i class="fas fa-file-csv mr-2"></i>Exportar Inventario (CSV)
+                            </button>
+                            <button onclick="exportData('report')" class="w-full bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors">
+                                <i class="fas fa-file-pdf mr-2"></i>Generar Reporte PDF
+                            </button>
+                            <button onclick="generateSampleData()" class="w-full bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors">
+                                <i class="fas fa-database mr-2"></i>Generar Datos de Ejemplo
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Data Preview -->
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">
+                        <i class="fas fa-table text-blue-600 mr-2"></i>Vista Previa de Datos
+                    </h3>
+                    <div id="dataPreview" class="overflow-x-auto">
+                        <p class="text-gray-500 text-center py-8">No hay datos cargados. Importa un archivo o genera datos de ejemplo.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recipes Tab -->
+            <div id="recipesContent" class="tab-content hidden">
+                <div class="mb-8">
+                    <h2 class="text-2xl font-bold text-gray-900 mb-2">Gestión de Recetas</h2>
+                    <p class="text-gray-600">Administra recetas y calcula ingredientes necesarios basados en proyecciones</p>
+                </div>
+
+                <!-- Recipe Management -->
+                <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-semibold text-gray-900">
+                            <i class="fas fa-utensils text-orange-600 mr-2"></i>Recetas Disponibles
+                        </h3>
+                        <button onclick="addNewRecipe()" class="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors">
+                            <i class="fas fa-plus mr-2"></i>Nueva Receta
+                        </button>
+                    </div>
+                    <div id="recipesList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <!-- Recipe cards will be loaded here -->
+                    </div>
+                </div>
+
+                <!-- Recipe Calculator -->
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">
+                        <i class="fas fa-calculator text-blue-600 mr-2"></i>Calculadora de Ingredientes
+                    </h3>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div>
+                            <div class="space-y-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Seleccionar Receta</label>
+                                    <select id="recipeSelect" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                        <option value="">Selecciona una receta...</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Cantidad a Producir</label>
+                                    <input type="number" id="recipeQuantity" value="100" min="1" 
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Período de Proyección</label>
+                                    <select id="recipePeriod" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                        <option value="7">Próximos 7 días</option>
+                                        <option value="14">Próximas 2 semanas</option>
+                                        <option value="30">Próximo mes</option>
+                                    </select>
+                                </div>
+                                <button onclick="calculateIngredients()" class="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                                    <i class="fas fa-calculator mr-2"></i>Calcular Ingredientes
+                                </button>
+                            </div>
+                        </div>
+                        <div>
+                            <div id="ingredientsResult" class="bg-gray-50 rounded-lg p-4">
+                                <p class="text-gray-500 text-center">Selecciona una receta y cantidad para calcular ingredientes.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Notifications Container -->
+    <div id="notificationsContainer" class="fixed top-4 right-4 z-50 space-y-2"></div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">
+                <i class="fas fa-cog text-gray-600 mr-2"></i>Configuración
+            </h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Frecuencia de Sincronización</label>
+                    <select class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <option>Cada 5 minutos</option>
+                        <option>Cada 15 minutos</option>
+                        <option>Cada hora</option>
+                        <option>Manual</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Notificaciones</label>
+                    <div class="space-y-2">
+                        <label class="flex items-center">
+                            <input type="checkbox" checked class="mr-2">
+                            <span class="text-sm">Alertas de stock crítico</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="checkbox" checked class="mr-2">
+                            <span class="text-sm">Recomendaciones de optimización</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="checkbox" class="mr-2">
+                            <span class="text-sm">Reportes diarios</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="flex space-x-3 mt-6">
+                <button onclick="closeSettings()" class="flex-1 bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors">
+                    Cancelar
+                </button>
+                <button onclick="saveSettings()" class="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                    Guardar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript -->
+    <script src="js/app.js"></script>
+    <script src="js/data-management.js"></script>
+    <script src="js/analytics.js"></script>
+    <script src="js/optimization.js"></script>
+    <script src="js/recipes.js"></script>
+    <script src="js/database.js"></script>
+</body>
+</html>
