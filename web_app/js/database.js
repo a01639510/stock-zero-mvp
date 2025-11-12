@@ -1,18 +1,18 @@
-// Stock Zero - Database Integration JavaScript
+// Stock Zero - Database Integration JavaScript (versión completa y adaptada a tus tablas reales)
+import { createClient } from "@supabase/supabase-js";
 
 class DatabaseManager {
     constructor() {
         this.supabaseUrl = null;
         this.supabaseKey = null;
+        this.supabase = null;
         this.isConnected = false;
+        this.user_id = localStorage.getItem('user_id') || null;
         this.connectionPromise = null;
     }
 
     async initialize() {
-        if (this.connectionPromise) {
-            return this.connectionPromise;
-        }
-
+        if (this.connectionPromise) return this.connectionPromise;
         this.connectionPromise = this._connect();
         return this.connectionPromise;
     }
@@ -24,146 +24,138 @@ class DatabaseManager {
             if (config.supabaseUrl && config.supabaseKey) {
                 this.supabaseUrl = config.supabaseUrl;
                 this.supabaseKey = config.supabaseKey;
+                this.supabase = createClient(this.supabaseUrl, this.supabaseKey);
                 this.isConnected = true;
-                console.log('✅ Connected to Supabase');
+                console.log("✅ Connected to Supabase");
                 return true;
             } else {
-                console.warn('⚠️ No database credentials found, using local storage');
+                console.warn("⚠️ No database credentials found, using local storage");
                 return false;
             }
         } catch (error) {
-            console.error('❌ Database connection failed:', error);
+            console.error("❌ Database connection failed:", error);
             return false;
         }
     }
 
     async _loadConfig() {
-        // 🔹 Prioridad 1: Variables de entorno (Netlify, Vite, etc.)
-        const envUrl = typeof import !== 'undefined' && import.meta?.env?.SUPABASE_URL;
-        const envKey = typeof import !== 'undefined' && import.meta?.env?.SUPABASE_KEY;
+        const envUrl = typeof import !== "undefined" && import.meta?.env?.SUPABASE_URL;
+        const envKey = typeof import !== "undefined" && import.meta?.env?.SUPABASE_KEY;
 
         if (envUrl && envKey) {
-            return {
-                supabaseUrl: envUrl,
-                supabaseKey: envKey
-            };
+            return { supabaseUrl: envUrl, supabaseKey: envKey };
         }
 
-        // 🔹 Prioridad 2: LocalStorage (modo fallback)
         return {
-            supabaseUrl: localStorage.getItem('supabaseUrl') || null,
-            supabaseKey: localStorage.getItem('supabaseKey') || null
+            supabaseUrl: localStorage.getItem("supabaseUrl") || null,
+            supabaseKey: localStorage.getItem("supabaseKey") || null,
         };
     }
 
     async setCredentials(url, key) {
         this.supabaseUrl = url;
         this.supabaseKey = key;
-
-        localStorage.setItem('supabaseUrl', url);
-        localStorage.setItem('supabaseKey', key);
-
+        this.supabase = createClient(url, key);
+        localStorage.setItem("supabaseUrl", url);
+        localStorage.setItem("supabaseKey", key);
         this.isConnected = true;
-        showNotification('Credenciales de base de datos guardadas', 'success');
+        showNotification("Credenciales de base de datos guardadas", "success");
     }
 
-    async testConnection() {
-        if (!this.isConnected) {
-            const connected = await this.initialize();
-            if (!connected) return false;
-        }
-
+    async authenticate(email, password) {
+        if (!this.isConnected) await this.initialize();
         try {
-            const response = await fetch(`${this.supabaseUrl}/rest/v1/`, {
-                headers: {
-                    apikey: this.supabaseKey,
-                    Authorization: `Bearer ${this.supabaseKey}`
-                }
-            });
-
-            return response.ok;
+            const { data, error } = await this.supabase.auth.signInWithPassword({ email, password });
+            if (error) throw error;
+            this.user_id = data.user.id;
+            localStorage.setItem("user_id", this.user_id);
+            console.log("🔐 Usuario autenticado:", this.user_id);
+            return { user: data.user, success: true };
         } catch (error) {
-            console.error('Connection test failed:', error);
-            return false;
+            console.error("Authentication failed:", error);
+            return { success: false, error: error.message };
         }
     }
 
-    async fetchSales() {
-        return this._fetchData('sales');
+    getUserId() {
+        return this.user_id;
     }
 
-    async fetchInventory() {
-        return this._fetchData('inventory');
+    // -------- FETCH DATA -------- //
+    async fetchClients() {
+        return this._fetchData("clients");
     }
 
-    async fetchRecipes() {
-        return this._fetchData('recipes');
+    async fetchStock() {
+        return this._fetchData("stock");
+    }
+
+    async fetchVentas() {
+        return this._fetchData("ventas");
     }
 
     async _fetchData(table) {
         if (!this.isConnected) return this._getLocalData(table);
+        if (!this.user_id && table !== "clients") {
+            console.warn("⚠️ No user_id available for filtering data.");
+            return [];
+        }
 
         try {
-            const response = await fetch(`${this.supabaseUrl}/rest/v1/${table}`, {
-                headers: {
-                    apikey: this.supabaseKey,
-                    Authorization: `Bearer ${this.supabaseKey}`
-                }
-            });
+            let query = this.supabase.from(table).select("*");
+            if (table !== "clients") query = query.eq("user_id", this.user_id);
 
-            if (response.ok) {
-                const data = await response.json();
-                this._saveLocalData(table, data);
-                return data;
-            } else {
-                throw new Error(`Failed to fetch ${table}`);
-            }
+            const { data, error } = await query;
+            if (error) throw error;
+
+            this._saveLocalData(table, data);
+            return data;
         } catch (error) {
             console.error(`Error fetching ${table}:`, error);
-            showNotification(`Error al cargar ${table}, usando caché local`, 'warning');
+            showNotification(`Error al cargar ${table}, usando caché local`, "warning");
             return this._getLocalData(table);
         }
     }
 
-    async saveSales(data) {
-        return this._saveData('sales', data);
+    // -------- SAVE DATA -------- //
+    async saveStock(data) {
+        return this._saveData("stock", data);
     }
 
-    async saveInventory(data) {
-        return this._saveData('inventory', data);
+    async saveVentas(data) {
+        return this._saveData("ventas", data);
     }
 
     async _saveData(table, data) {
+        if (!this.user_id) {
+            console.error("❌ No user_id - cannot save data");
+            return false;
+        }
+
+        const payload = Array.isArray(data)
+            ? data.map(d => ({ ...d, user_id: this.user_id }))
+            : { ...data, user_id: this.user_id };
+
         if (!this.isConnected) {
-            this._saveLocalData(table, data);
+            this._saveLocalData(table, payload);
             return true;
         }
 
         try {
-            const response = await fetch(`${this.supabaseUrl}/rest/v1/${table}`, {
-                method: 'POST',
-                headers: {
-                    apikey: this.supabaseKey,
-                    Authorization: `Bearer ${this.supabaseKey}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(data)
-            });
-
-            if (response.ok) {
-                this._saveLocalData(table, data);
-                return true;
-            } else {
-                throw new Error(`Failed to save ${table}`);
-            }
+            const { error } = await this.supabase.from(table).insert(payload);
+            if (error) throw error;
+            this._saveLocalData(table, payload);
+            console.log(`✅ ${table} saved successfully`);
+            return true;
         } catch (error) {
             console.error(`Error saving ${table}:`, error);
-            showNotification(`Error al guardar ${table}, guardando localmente`, 'warning');
-            this._saveLocalData(table, data);
+            showNotification(`Error al guardar ${table}, guardando localmente`, "warning");
+            this._saveLocalData(table, payload);
             return false;
         }
     }
 
+    // -------- LOCAL CACHE -------- //
     _saveLocalData(type, data) {
         localStorage.setItem(`stockZero_${type}`, JSON.stringify(data));
     }
@@ -173,70 +165,56 @@ class DatabaseManager {
         return data ? JSON.parse(data) : [];
     }
 
+    // -------- SYNC ALL DATA -------- //
     async syncAllData() {
-        showNotification('Sincronizando todos los datos...', 'info');
+        showNotification("Sincronizando todos los datos...", "info");
         try {
-            const [sales, inventory, recipes] = await Promise.all([
-                this.fetchSales(),
-                this.fetchInventory(),
-                this.fetchRecipes()
+            const [clients, stock, ventas] = await Promise.all([
+                this.fetchClients(),
+                this.fetchStock(),
+                this.fetchVentas()
             ]);
 
-            appState.data = { sales, inventory, recipes };
+            appState.data = { clients, stock, ventas };
             saveData();
 
-            showNotification('Datos sincronizados exitosamente', 'success');
+            showNotification("Datos sincronizados exitosamente", "success");
             return true;
         } catch (error) {
-            console.error('Sync failed:', error);
-            showNotification('Error en sincronización', 'error');
+            console.error("Sync failed:", error);
+            showNotification("Error en sincronización", "error");
             return false;
         }
     }
 
-    async authenticate(email, password) {
-        if (!this.isConnected) {
-            return { user: { email, name: email.split('@')[0] }, success: true };
-        }
-
+    async testConnection() {
+        if (!this.isConnected) await this.initialize();
         try {
-            const response = await fetch(`${this.supabaseUrl}/auth/v1/token?grant_type=password`, {
-                method: 'POST',
-                headers: {
-                    apikey: this.supabaseKey,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ email, password })
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                return { user: data.user, success: true };
-            } else {
-                return { success: false, error: 'Invalid credentials' };
-            }
+            const { error } = await this.supabase.from("clients").select("id").limit(1);
+            if (error) throw error;
+            return true;
         } catch (error) {
-            console.error('Authentication failed:', error);
-            return { success: false, error: error.message };
+            console.error("Connection test failed:", error);
+            return false;
         }
     }
 }
 
+// --------- FUNCIONES DE INTERFAZ --------- //
 const dbManager = new DatabaseManager();
 
 async function enhancedSyncData() {
     const isConnected = await dbManager.initialize();
-    if (isConnected) {
-        return await dbManager.syncAllData();
-    } else {
+    if (isConnected) return await dbManager.syncAllData();
+    else {
         syncData();
         return false;
     }
 }
 
 function showDatabaseConfig() {
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay';
+    const modal = document.createElement("div");
+    modal.className = "modal-overlay";
     modal.innerHTML = `
         <div class="modal">
             <h3 class="text-lg font-semibold text-gray-900 mb-4">
@@ -246,12 +224,12 @@ function showDatabaseConfig() {
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Supabase URL</label>
                     <input type="text" id="dbUrl" placeholder="https://your-project.supabase.co" class="form-input"
-                        value="${localStorage.getItem('supabaseUrl') || ''}">
+                        value="${localStorage.getItem("supabaseUrl") || ""}">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Supabase Anon Key</label>
                     <input type="password" id="dbKey" placeholder="your-anon-key" class="form-input"
-                        value="${localStorage.getItem('supabaseKey') || ''}">
+                        value="${localStorage.getItem("supabaseKey") || ""}">
                 </div>
                 <div class="text-xs text-gray-500">
                     <p>Obtén estas credenciales desde tu proyecto de Supabase:</p>
@@ -276,29 +254,29 @@ function showDatabaseConfig() {
 }
 
 function closeDatabaseConfig() {
-    const modal = document.querySelector('.modal-overlay');
+    const modal = document.querySelector(".modal-overlay");
     if (modal) document.body.removeChild(modal);
 }
 
 async function testDatabaseConnection() {
-    const url = document.getElementById('dbUrl').value;
-    const key = document.getElementById('dbKey').value;
+    const url = document.getElementById("dbUrl").value;
+    const key = document.getElementById("dbKey").value;
     if (!url || !key) {
-        showNotification('Por favor, completa todos los campos', 'warning');
+        showNotification("Por favor, completa todos los campos", "warning");
         return;
     }
-    showNotification('Probando conexión...', 'info');
+    showNotification("Probando conexión...", "info");
     await dbManager.setCredentials(url, key);
     const isConnected = await dbManager.testConnection();
-    if (isConnected) showNotification('¡Conexión exitosa!', 'success');
-    else showNotification('Error de conexión, verifica tus credenciales', 'error');
+    if (isConnected) showNotification("¡Conexión exitosa!", "success");
+    else showNotification("Error de conexión, verifica tus credenciales", "error");
 }
 
 async function saveDatabaseConfig() {
-    const url = document.getElementById('dbUrl').value;
-    const key = document.getElementById('dbKey').value;
+    const url = document.getElementById("dbUrl").value;
+    const key = document.getElementById("dbKey").value;
     if (!url || !key) {
-        showNotification('Por favor, completa todos los campos', 'warning');
+        showNotification("Por favor, completa todos los campos", "warning");
         return;
     }
     await dbManager.setCredentials(url, key);
@@ -306,13 +284,13 @@ async function saveDatabaseConfig() {
     setTimeout(() => enhancedSyncData(), 1000);
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener("DOMContentLoaded", () => {
     dbManager.initialize().then(isConnected => {
         if (isConnected) {
-            console.log('Database connected on startup');
+            console.log("Database connected on startup");
             enhancedSyncData();
         } else {
-            console.log('Using local storage only');
+            console.log("Using local storage only");
         }
     });
 });
