@@ -1,0 +1,22 @@
+{
+  "name": "stock-zero-web-app",
+  "version": "1.0.0",
+  "description": "Stock Zero MVP - TypeScript Web Application",
+  "main": "dist/app.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "serve": "http-server . -p 8080",
+    "dev": "concurrently &quot;npm run watch&quot; &quot;sleep 2 && npm run serve&quot;"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "concurrently": "^8.2.0",
+    "http-server": "^14.1.1",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {},
+  "keywords": ["stock", "inventory", "typescript", "netlify"],
+  "author": "Stock Zero Team",
+  "license": "MIT"
+}
