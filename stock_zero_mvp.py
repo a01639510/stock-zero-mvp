@@ -136,11 +136,11 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-with st.sidebar:
+    with st.sidebar:
     st.markdown(f"### 👤 {st.session_state.user.email}")
     st.markdown("---")
     
-    if st.button("🚪 Cerrar Sesión", type="secondary", use_container_width=True):
+    if st.button("🚪 Cerrar Sesión", type="secondary", width="stretch"):
         supabase.auth.sign_out()
         st.session_state.user = None
         st.session_state.show_login = True
