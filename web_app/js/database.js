@@ -39,17 +39,35 @@ class DatabaseManager {
     }
 
     async _loadConfig() {
-        const envUrl = typeof import !== "undefined" && import.meta?.env?.SUPABASE_URL;
-        const envKey = typeof import !== "undefined" && import.meta?.env?.SUPABASE_KEY;
+        // Intentar cargar desde variables de entorno (Netlify con prefijo VITE_)
+        const envUrl = typeof import !== "undefined" && import.meta?.env?.VITE_SUPABASE_URL;
+        const envKey = typeof import !== "undefined" && import.meta?.env?.VITE_SUPABASE_KEY;
 
         if (envUrl && envKey) {
+            console.log("✅ Loading Supabase config from environment variables");
             return { supabaseUrl: envUrl, supabaseKey: envKey };
         }
 
-        return {
-            supabaseUrl: localStorage.getItem("supabaseUrl") || null,
-            supabaseKey: localStorage.getItem("supabaseKey") || null,
-        };
+        // Fallback: intentar cargar desde variables de entorno sin prefijo
+        const fallbackUrl = typeof import !== "undefined" && import.meta?.env?.SUPABASE_URL;
+        const fallbackKey = typeof import !== "undefined" && import.meta?.env?.SUPABASE_KEY;
+
+        if (fallbackUrl && fallbackKey) {
+            console.log("✅ Loading Supabase config from fallback environment variables");
+            return { supabaseUrl: fallbackUrl, supabaseKey: fallbackKey };
+        }
+
+        // Fallback final: localStorage
+        const localUrl = localStorage.getItem("supabaseUrl");
+        const localKey = localStorage.getItem("supabaseKey");
+
+        if (localUrl && localKey) {
+            console.log("✅ Loading Supabase config from localStorage");
+            return { supabaseUrl: localUrl, supabaseKey: localKey };
+        }
+
+        console.warn("⚠️ No Supabase configuration found. Check your environment variables or localStorage.");
+        return { supabaseUrl: null, supabaseKey: null };
     }
 
     async setCredentials(url, key) {

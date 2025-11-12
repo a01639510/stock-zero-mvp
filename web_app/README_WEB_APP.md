@@ -1,5 +1,18 @@
 # 🏭 Stock Zero - Aplicación Web Moderna
 
+## ⚠️ IMPORTANTE: Configuración Requerida para Funcionalidad Completa
+
+Si desplegaste en Netlify pero **la aplicación no guarda datos, no autentica usuarios, o el dashboard está vacío**, necesitas configurar Supabase:
+
+📋 **Lee la guía completa:** [`NETLIFY_SETUP.md`](./NETLIFY_SETUP.md)
+
+**Resumen rápido:**
+1. Configura `VITE_SUPABASE_URL` y `VITE_SUPABASE_KEY` en Netlify
+2. Ejecuta el SQL en Supabase para crear tablas
+3. Haz deploy y prueba con `window.diagnoseSupabase()`
+
+🚀 **Sin configuración, la app solo funcionará en modo demo/local.**
+
 ## 🎯 **Características Completas Mantenidas y Mejoradas**
 
 ### ✅ **Funciones Originales Preservadas:**

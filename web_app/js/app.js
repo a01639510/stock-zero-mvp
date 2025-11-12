@@ -672,3 +672,52 @@ const savedTab = localStorage.getItem('stockZeroCurrentTab');
 if (savedTab) {
     appState.currentTab = savedTab;
 }
+// DIAGNOSTIC FUNCTION - Check Supabase Connection
+async function diagnoseConnection() {
+    console.log('🔍 Diagnosing Supabase connection...');
+    
+    // Check all possible config methods
+    const configs = [
+        {
+            name: 'VITE Environment Variables',
+            url: typeof import !== undefined && import.meta?.env?.VITE_SUPABASE_URL,
+            key: typeof import !== undefined && import.meta?.env?.VITE_SUPABASE_KEY
+        },
+        {
+            name: 'Direct Environment Variables',
+            url: typeof import !== undefined && import.meta?.env?.SUPABASE_URL,
+            key: typeof import !== undefined && import.meta?.env?.SUPABASE_KEY
+        },
+        {
+            name: 'LocalStorage',
+            url: localStorage.getItem(supabaseUrl),
+            key: localStorage.getItem(supabaseKey)
+        }
+    ];
+
+    let workingConfig = null;
+    
+    configs.forEach(config => {
+        if (config.url && config.key) {
+            console.log(`✅ ${config.name}: Available`);
+            if (!workingConfig) workingConfig = config;
+        } else {
+            console.log(`❌ ${config.name}: Not available`);
+        }
+    });
+
+    if (!workingConfig) {
+        console.error('🚨 CRITICAL: No Supabase configuration found!');
+        console.log('💡 SOLUTION: Check your Netlify environment variables');
+        console.log('   Required variables:');
+        console.log('   - VITE_SUPABASE_URL (or SUPABASE_URL)');
+        console.log('   - VITE_SUPABASE_KEY (or SUPABASE_KEY)');
+        console.log('   Make sure to redeploy after setting variables!');
+    } else {
+        console.log(`✅ Using configuration from: ${workingConfig.name}`);
+        console.log(`🔗 URL: ${workingConfig.url?.substring(0, 30)}...`);
+    }
+}
+
+// Expose diagnostic function globally
+window.diagnoseSupabase = diagnoseConnection;
