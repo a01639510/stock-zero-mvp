@@ -196,14 +196,14 @@ def upload_modal():
                 'producto': ['Café en Grano (Kg)', 'Leche Entera (Litros)'],
                 'cantidad_vendida': [7, 14]
             })
-            st.dataframe(ejemplo_largo, hide_index=True)
+            st.dataframe(ejemplo_largo, hide_index=True, width='stretch')
             st.download_button("⬇️ Descargar Largo", ejemplo_largo.to_csv(index=False), "ventas_largo.csv", "text/csv")
 
             st.markdown("**Formato Ancho**")
             ejemplo_ancho = pd.DataFrame({
                 'fecha': ['2025-01-01'], 'Café en Grano (Kg)': [7], 'Leche Entera (Litros)': [14]
             })
-            st.dataframe(ejemplo_ancho, hide_index=True)
+            st.dataframe(ejemplo_ancho, hide_index=True, width='stretch')
             st.download_button("⬇️ Descargar Ancho", ejemplo_ancho.to_csv(index=False), "ventas_ancho.csv", "text/csv")
 
         with col2:
@@ -211,7 +211,7 @@ def upload_modal():
             ejemplo_stock = pd.DataFrame({
                 'fecha': ['2024-12-31'], 'producto': ['Café en Grano (Kg)'], 'cantidad_recibida': [120]
             })
-            st.dataframe(ejemplo_stock, hide_index=True)
+            st.dataframe(ejemplo_stock, hide_index=True, width='stretch')
             st.download_button("⬇️ Descargar Stock", ejemplo_stock.to_csv(index=False), "stock.csv", "text/csv")
 
     st.markdown("---")
