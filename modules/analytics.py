@@ -223,7 +223,7 @@ def analytics_app():
         'Nuestro': [f"${v:.0f}" for v in costos_nuestro.values()],
         'Ahorro': [f"${costos_trad[k] - costos_nuestro[k]:.0f}" for k in costos_trad.keys()]
     })
-    st.dataframe(comparacion, use_container_width=True, hide_index=True)
+    st.dataframe(comparacion, width='stretch', hide_index=True)
 
     fig_costos = go.Figure(data=[
         go.Bar(name='Tradicional', x=comparacion['Costo'][:-1], y=[costos_trad['pedidos'], costos_trad['holding'], costos_trad['merma'], costos_trad['stockout']]),
@@ -297,9 +297,7 @@ def analytics_app():
 
     exceso = df_semanal['Tradicional Stock'].mean() - df_semanal['Nuestro Stock'].mean()
     st.info(f"**Exceso de stock evitado: {exceso:.1f} unidades por semana**")
-    # Al final de analytics_app() en modules/analytics.py
+    
+    # Al final de analytics_app()
     st.session_state.df_sim = df_sim
     st.session_state.PR = PR
-
-# Al final de analytics_app() en modules/analytics.py
-        
